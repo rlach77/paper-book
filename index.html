@@ -771,7 +771,7 @@ function updateSlipNumbers() {
 // ---------- data (Supabase) ----------
 // Tables use snake_case columns; the page keeps the camelCase field names it always had.
 const CFG = window.PAPERBOOK || {};
-const sb = window.supabase && CFG.supabaseUrl && !/YOUR-/.test(CFG.supabaseUrl + CFG.supabaseKey) ? window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseKey) : null;
+const sb = window.supabase && CFG.supabaseUrl && !/YOUR-/.test(CFG.supabaseUrl + CFG.supabaseKey) ? window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseKey, { auth: { flowType: 'pkce' } }) : null;
 const GAME_COLS = { startsAt: 'starts_at', awayML: 'away_ml', homeML: 'home_ml', homeSpread: 'home_spread', spreadOdds: 'spread_odds', awaySpreadOdds: 'away_spread_odds', totalOdds: 'total_odds', underOdds: 'under_odds', updatedAt: 'updated_at' };
 const PLAYER_COLS = { joinedAt: 'joined_at' };
 const toRow = (o, cols) => Object.fromEntries(Object.entries(o).map(([k, v]) => [cols[k] || k, v]));
@@ -998,8 +998,10 @@ async function boot() {
   if (!sb) { S.ready = true; S.offline = true; render(); return; }
   // a failed Google sign-in comes back with ?error_description=… or #error_description=…; say so instead of failing silently
   const authErr = new URLSearchParams(location.search).get('error_description') || new URLSearchParams(location.hash.slice(1)).get('error_description');
-  const { data: { session } } = await sb.auth.getSession();
-  if (authErr && !session) setTimeout(() => toast('Google sign-in failed: ' + authErr), 0);
+  const { data: { session }, error: sessErr } = await sb.auth.getSession();
+  if (!session && (authErr || sessErr)) setTimeout(() => toast('Google sign-in failed: ' + (authErr || sessErr.message)), 0);
+  // Google sends people back with ?code=… (or an error); tidy it out of the address bar once it's been used
+  if (/[?&](code|error)=/.test(location.search)) history.replaceState(null, '', location.pathname + location.hash);
   await applySession(session);
   // don't call Supabase inside the auth callback itself (it can deadlock); hop out of it first
   sb.auth.onAuthStateChange((ev, session) => {
