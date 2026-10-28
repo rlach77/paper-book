@@ -281,7 +281,7 @@ const START = 1000;
 const S = {
   me: null, isOwner: false,
   ready: false, offline: false, games: {}, players: {}, history: {}, gLoaded: false, pLoaded: false,
-  tab: 'board', tz: (() => { try { return localStorage.getItem('pb-tz') || ''; } catch { return ''; } })(), renameDraft: null, slip: [], mode: 'parlay', sheetOpen: false, league: 'all', stake: '', handleDraft: '', drafts: {}, confirmDel: null, settle: {},
+  tab: 'board', invite: (() => { try { return localStorage.getItem('pb-invite') || ''; } catch { return ''; } })(), inviteCode: '', tz: (() => { try { return localStorage.getItem('pb-tz') || ''; } catch { return ''; } })(), renameDraft: null, slip: [], mode: 'parlay', sheetOpen: false, league: 'all', stake: '', handleDraft: '', drafts: {}, confirmDel: null, settle: {},
   dirty: false, busy: false, err: ''
 };
 const TABS = [['board','Board'],['picks','My picks'],['standings','Standings'],['book','Run the book']];
@@ -479,8 +479,11 @@ function renderView() {
 }
 
 function joinBlock() {
-  if (!S.me) return `<div class="notice join"><p><strong>You’re watching.</strong> Sign in with Google to grab a seat and get ${fmtU(START)} units of fake money every week.</p><button type="button" class="btn accent" data-signin>Sign in with Google</button></div>`;
+  if (!S.me) return S.invite
+    ? `<div class="notice join"><p><strong>You’re invited.</strong> Sign in with Google to grab a seat and get ${fmtU(START)} units of fake money every week.</p><button type="button" class="btn accent" data-signin>Sign in with Google</button></div>`
+    : `<div class="notice join"><p><strong>You’re watching.</strong> Players join with an invite link from the commissioner. Already playing? Sign in.</p><button type="button" class="btn accent" data-signin>Sign in with Google</button></div>`;
   if (myPlayer()) return '';
+  if (!S.invite && !S.isOwner) return `<div class="notice join"><p><strong>You need an invite.</strong> This book is invite-only. Ask the commissioner for the invite link, then open it on this device.</p></div>`;
   return `<div class="notice join">
     <p><strong>Grab a seat.</strong> Pick a display name and you get ${fmtU(START)} units of fake money every week. Your score is what you win minus what you lose, so units you don’t bet are wasted.</p>
     <form class="row" data-act="join">
@@ -686,6 +689,12 @@ function gameForm(id, submitLabel) {
 function viewBook() {
   const games = Object.values(S.games).sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt));
   return `<div><h1>Run the book</h1><p class="sub">Only you see this tab. Post games, adjust lines before kickoff, and enter final scores to settle every pick on that game.</p></div>
+  <section class="card"><h2>Invite link</h2>
+    <p class="muted" style="margin-top:0">Send this to friends. Anyone without it can watch but not join. Making a new link turns off the old one; people who already joined stay in.</p>
+    <div class="row"><input type="text" id="invite-link" readonly value="${S.inviteCode ? esc(location.origin + location.pathname + '?invite=' + S.inviteCode) : 'Loading…'}" aria-label="Invite link" style="flex:1 1 16em">
+      <button type="button" class="btn small" data-copyinvite>Copy</button>
+      <button type="button" class="btn small" data-newinvite>${S.confirmInvite ? 'Sure? Old link stops working' : 'New link'}</button></div>
+  </section>
   <section class="card"><h2>Post a game</h2>${gameForm('new', 'Post game')}</section>
   <section class="card"><h2>Games on the board</h2>${games.length ? games.map(g => {
     const st = gameState(g), sd = S.settle[g.id] || { away: g.final?.away ?? '', home: g.final?.home ?? '' };
@@ -815,7 +824,14 @@ async function write(q, table) {
   render();
 }
 const api = {
-  join: body => write(sb.from('players').insert(toRow({ id: S.me, ...body }, PLAYER_COLS)), 'players'),
+  // joining goes through join_book(), which checks the invite code (admins don't need one)
+  async join(handle) {
+    const { data, error } = await sb.rpc('join_book', { p_handle: handle, p_code: S.invite || null });
+    if (error) throw error;
+    for (const r of data || []) S.players[r.id] = fromPlayer(r);
+    render();
+  },
+  async inviteCode(rotate = false) { const { data, error } = await sb.rpc('invite_code', { p_rotate: rotate }); if (error) throw error; S.inviteCode = data; render(); },
   updateMe: body => write(sb.from('players').update(toRow(body, PLAYER_COLS)).eq('id', S.me), 'players'),
   addGame: body => write(sb.from('games').insert(toRow(body, GAME_COLS)), 'games'),
   updateGame: (id, body) => write(sb.from('games').update(toRow(body, GAME_COLS)).eq('id', id), 'games'),
@@ -862,6 +878,7 @@ async function applySession(session) {
   S.me = u?.id || null; S.isOwner = false;
   if (!u) return;
   const { data } = await sb.rpc('is_admin'); S.isOwner = !!data;
+  if (S.isOwner) api.inviteCode().catch(() => {});
   if (!S.handleDraft) S.handleDraft = String(u.user_metadata?.full_name || u.user_metadata?.name || '').split(/\s+/)[0].slice(0, 20);
 }
 const signIn = () => (sessionStorage.setItem('pb-signing-in', '1'), sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + location.pathname } }));
@@ -873,7 +890,12 @@ function failMsg(e) {
   if (e && e.hint === 'game_started') return 'A game on that ticket has already started.';
   if (e && e.hint === 'game_missing') return 'A game on that ticket is no longer on the board.';
   if (e && (e.code === 'denied' || e.code === '42501')) return 'You don’t have permission to change that. Try signing in again.';
-  if (e && e.code === '23505') return 'That already exists. Reload the page.';
+  if (e && e.hint === 'bad_invite') return 'That invite link doesn’t work anymore. Ask the commissioner for a new one.';
+  if (e && e.hint === 'line_moved') return 'A line moved before your pick went in. Check the new price and try again.';
+  if (e && e.hint === 'over_bankroll') return 'That’s more than you have left to bet this week.';
+  if (e && e.hint === 'clash') return 'Those picks can’t both win, so they can’t go on one parlay.';
+  if (e && e.hint === 'bad_bet') return 'That ticket isn’t allowed. Reload the page and try again.';
+  if (e && e.code === '23505') return /handle/.test(e.message || '') ? 'Someone already goes by that name. Pick another.' : 'That already exists. Reload the page.';
   return 'That didn’t save. Check your connection and try again.';
 }
 // display names: 2–20 characters, not already used by another player (ignoring case)
@@ -886,9 +908,12 @@ async function join(handle) {
   handle = handle.trim().slice(0, 20);
   const bad = nameProblem(handle); if (bad) { toast(bad); return; }
   try {
-    await api.join({ handle, joinedAt: new Date().toISOString(), bets: [] });
+    await api.join(handle);
     S.handleDraft = ''; toast(`You're in with ${fmtU(START)} units.`);
-  } catch (e) { toast(failMsg(e)); render(); }
+  } catch (e) {
+    if (e && e.hint === 'bad_invite') { S.invite = ''; try { localStorage.removeItem('pb-invite'); } catch {} }
+    toast(failMsg(e)); render();
+  }
 }
 async function rename(handle) {
   handle = handle.trim().slice(0, 20);
@@ -973,6 +998,15 @@ document.addEventListener('click', e => {
   else if (ds.rmleg) { S.slip.splice(+ds.rmleg, 1); S.err = ''; render(); }
   else if (ds.mode) { S.mode = ds.mode; render(); }
   else if (ds.league) { S.league = ds.league; render(); }
+  else if ('copyinvite' in ds) {
+    const v = $('invite-link').value;
+    (navigator.clipboard ? navigator.clipboard.writeText(v) : Promise.reject()).then(() => toast('Invite link copied.'), () => { $('invite-link').select(); toast('Select the link and copy it.'); });
+  }
+  else if ('newinvite' in ds) {
+    if (!S.confirmInvite) { S.confirmInvite = true; render(); return; }
+    S.confirmInvite = false;
+    api.inviteCode(true).then(() => toast('New invite link made. The old one no longer works.'), e => toast(failMsg(e)));
+  }
   else if (ds.quick) {
     const c = slipCalc(); if (!c.s) return;
     S.stake = ds.quick === 'max' ? String(Math.floor((c.perPick ? c.s.available / c.n : c.s.available) * 100) / 100) : ds.quick;
@@ -1028,6 +1062,12 @@ setInterval(() => { if (!isTyping()) render(); }, 30000);
 
 // ---------- boot ----------
 async function boot() {
+  // an invite link (?invite=<code>) is remembered in this browser so it survives the trip to Google and back
+  const inv = new URLSearchParams(location.search).get('invite');
+  if (inv) {
+    S.invite = inv.trim(); try { localStorage.setItem('pb-invite', S.invite); } catch {}
+    history.replaceState(null, '', location.pathname + location.hash);
+  }
   route();
   if (!sb) { S.ready = true; S.offline = true; render(); return; }
   // a failed Google sign-in comes back with ?error_description=… or #error_description=…, or fails while the code is

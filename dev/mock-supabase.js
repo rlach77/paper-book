@@ -4,6 +4,7 @@
 // trigger is imitated (a row whenever a game's lines change).
 //
 // URL params:  ?as=<userId>   be that user (default "u_dev_owner"); "none" = signed out
+//              &invite=dev-invite   arrive by invite link (needed to join as a non-admin)
 //              &owner=0       not an admin (no "Run the book" tab)
 //              &reset=1       wipe the mock store and reseed games from seed/games.json
 (function () {
@@ -113,7 +114,19 @@
   const session = () => (as === 'none' || db.signedOut[as]) ? null : { user: { id: as, user_metadata: { full_name: as === 'u_dev_owner' ? 'Ryan Dev' : as.replace(/^u_/, '') + ' Friend' } } };
   const client = {
     from: table => new Query(table),
-    rpc: async name => ({ data: name === 'is_admin' ? (!!session() && isAdmin) : null, error: null }),
+    // invite code is "dev-invite" (open dev/preview.html?invite=dev-invite&as=u_friend&owner=0 to join as a friend)
+    rpc: async (name, args = {}) => {
+      if (name === 'is_admin') return { data: !!session() && isAdmin, error: null };
+      if (name === 'invite_code') return isAdmin ? { data: db.invite = args.p_rotate ? Math.random().toString(36).slice(2, 10) : (db.invite || 'dev-invite'), error: null } : { data: null, error: { code: '42501' } };
+      if (name === 'join_book') {
+        if (!session()) return { data: null, error: { hint: 'signed_out' } };
+        if (!isAdmin && args.p_code !== (db.invite || 'dev-invite')) return { data: null, error: { hint: 'bad_invite', message: 'invite code is wrong' } };
+        if (Object.values(db.players).some(p => p.id !== as && p.handle.trim().toLowerCase() === args.p_handle.trim().toLowerCase())) return { data: null, error: { code: '23505', message: 'players_handle_unique' } };
+        db.players[as] ||= { id: as, handle: args.p_handle.trim(), joined_at: new Date().toISOString(), bets: [] };
+        commit(); return { data: [clone(db.players[as])], error: null };
+      }
+      return { data: null, error: null };
+    },
     channel: () => {
       const ch = { on(_, filter, fn) { listeners.push({ table: filter.table, fn }); return ch; }, subscribe() { return ch; } };
       return ch;

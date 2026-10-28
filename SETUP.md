@@ -55,6 +55,6 @@ Reload the site and the **Run the book** tab appears.
 → Tell Claude when it's done. Claude then turns off the old claude.ai daily task so the two don't both run.
 
 ## Later
-- Friends: send them `https://<gh-user>.github.io/paper-book/`. They sign in with Google and pick a handle.
+- Friends: copy the invite link from **Run the book** and send them that (the book is invite-only). They sign in with Google and pick a handle. Plain link without the invite → they can watch but not join.
 - Another commissioner: same `insert into public.admins …` with their email.
 - The old claude.ai artifact can be deleted once you're happy with the new site (ask Claude).
