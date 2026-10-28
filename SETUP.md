@@ -1,5 +1,7 @@
 # Moving Paper Book to Supabase + GitHub Pages
 
+**All steps done Oct 28, 2026.** Site: https://rlach77.github.io/paper-book/ · Supabase project `xbnmrdpbvtsvlmxmzfgi`. Kept for reference (e.g. adding a commissioner).
+
 Steps that need your accounts. Do them in order; each one says what to send back to Claude.
 Placeholders: `<ref>` is your Supabase project ref (from `https://<ref>.supabase.co`), `<gh-user>` is the GitHub account the site lives on.
 

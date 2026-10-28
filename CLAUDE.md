@@ -2,12 +2,11 @@
 
 A fake-money sportsbook for a group of friends. Everyone gets 1,000 units **per week** (unbet units don't carry over), makes spread / total / moneyline picks (straight or parlayed) on NFL, NBA and NHL games, and climbs a shared leaderboard ranked by score = total won − total lost across all weeks. No real money anywhere. Ryan is the commissioner.
 
-## Where it lives (mid-migration, Oct 27, 2026)
+## Where it lives
 
-Moving from a claude.ai artifact to **Supabase (data + Google sign-in + daily odds job) + GitHub Pages (the page)**. `SETUP.md` is the checklist of account steps Ryan does; track progress there.
-
-- **New:** `index.html` + `config.js` served by GitHub Pages from a **public** repo `paper-book` on a *different* GitHub account than `RL-VH` (the one `gh` was logged into). Ask Ryan which account before any `gh repo create` / push; switch with `gh auth switch`. Commit/push only when asked.
-- **Old (being retired):** claude.ai artifact https://claude.ai/artifact/3RyqRkx7JViaC3n7C3cKPv, its database (ArtifactData), and the scheduled task `paper-book-daily-odds` (claude.ai app, 10 AM local) that runs `scripts/fetch_odds.py` + `scripts/plan_odds_writes.py`. Once the Supabase `odds-pull` cron is confirmed working, disable that task (`update_scheduled_task enabled:false`) and delete `capabilities.json`, `scripts/plan_odds_writes.py` and (optionally) `scripts/fetch_odds.py`. `index.html` no longer runs as an artifact — don't republish it there.
+- **Site:** https://rlach77.github.io/paper-book/ — GitHub Pages from `main` of the **public** repo `rlach77/paper-book` (personal account, not `RL-VH`; `gh auth switch -u rlach77` before any `gh`/push, and switch back to RL-VH after if needed). Commit/push only when asked.
+- **Supabase project:** `xbnmrdpbvtsvlmxmzfgi` (URL + publishable key in `config.js`). Google sign-in, the `odds-pull` Edge Function and its pg_cron schedule are live as of Oct 28, 2026. Ryan's player handle is "Cream AssduelJizzbar".
+- **Retired:** the claude.ai artifact https://claude.ai/artifact/3RyqRkx7JViaC3n7C3cKPv and its ArtifactData (delete only if Ryan asks); the claude.ai scheduled task `paper-book-daily-odds` is disabled. `scripts/fetch_odds.py` remains as a manual local pull tool.
 
 ## The page
 
@@ -17,7 +16,7 @@ Moving from a claude.ai artifact to **Supabase (data + Google sign-in + daily od
 - Must work at ~400px width (16px gutter). On ≤520px the odds columns are fixed at 66px so team names get room.
 - Branding: the banner and `<title>` read "Todd Albert’s Cuckin’ Sports Book" (Ryan's choice); "Paper Book" is just the project/repo name.
 - Display names: players change theirs in My picks (the name pill in the top bar links there). `nameProblem()` enforces 2–20 chars and no case-insensitive duplicates — client-side only.
-- Sign-in: `sb.auth.signInWithOAuth({ provider: 'google' })`, redirecting back to the same page. `S.me` = `auth.uid()`; `S.isOwner` = `rpc('is_admin')`. Signed-out visitors can see everything but not pick.
+- Sign-in: `sb.auth.signInWithOAuth({ provider: 'google' })` with the PKCE flow, redirecting back to the same page. Hard-won details (Oct 28): `detectSessionInUrl` is off and `boot()` calls `exchangeCodeForSession(?code)` itself, because in Safari the library's own URL check said "not a PKCE flow" and silently skipped it; the client uses a per-tab `lock` (`tabLock`) instead of `navigator.locks`, because one stuck tab froze every other tab on "Loading…". `boot()` shows "Google sign-in failed: …" (with the auth library's debug log) and, after 10s, "Stuck at …" — keep these until sign-in has been solid for a while. `S.me` = `auth.uid()`; `S.isOwner` = `rpc('is_admin')`. Signed-out visitors can see everything but not pick.
 - Data layer (`// ---------- data (Supabase) ----------`): tables are snake_case, the page keeps its old camelCase fields via `GAME_COLS` / `PLAYER_COLS`. `loadAll()` loads all players, games from the last 21 days, plus any older game referenced by a ticket. Realtime `postgres_changes` on `games` and `players` keeps it live; it reloads when the tab becomes visible again. Writes go through `api.*`, which fold the returned row into state.
 - Line moves (`// ---------- line moves ----------`): `loadAll()` also loads `line_history` for the loaded games (realtime INSERTs keep it live). Each card shows a small step chart for spread, total and moneyline (home side, or the away side if only that one moved) once that metric has had 2+ distinct values; price-only changes (−110 → −115) aren't charted; spread and moneyline both plot "home more favored" as up (spread negated, moneyline on implied win chance), total higher = up. Native SVG `<title>` per change point is the hover label. History starts when a game is first inserted, so lines before the move to Supabase aren't there.
 - Team badges: `TEAMS` maps full team name (accents and periods stripped) → `ABBR primary ring` colors; original monogram graphics, not team logos. Add a team there if a new name shows up (fallback is a grey badge).
