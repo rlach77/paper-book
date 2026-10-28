@@ -119,6 +119,8 @@
       return ch;
     },
     auth: {
+      initialize: async () => ({ error: null }),
+      exchangeCodeForSession: async () => ({ data: { session: session() }, error: null }),
       getSession: async () => ({ data: { session: session() } }),
       onAuthStateChange: fn => { authCbs.push(fn); return { data: { subscription: { unsubscribe() {} } } }; },
       signInWithOAuth: async () => { delete db.signedOut[as]; save(db); authCbs.forEach(fn => fn('SIGNED_IN', session())); return { error: null }; },

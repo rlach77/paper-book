@@ -196,6 +196,9 @@ input[type=number] { font-family: var(--f-mono); }
 .seg button + button { border-left: 1px solid var(--line); }
 .seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
 .filters { display: flex; gap: 6px; flex-wrap: wrap; }
+.boardbar { display: flex; gap: 8px 12px; flex-wrap: wrap; align-items: center; justify-content: space-between; }
+.tzpick { display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--muted); }
+.tzpick select { padding: 6px 8px; min-height: 36px; color: var(--ink); }
 .fchip { background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; font-family: var(--f-display); font-weight: 600; font-size: 15px; letter-spacing: .04em; text-transform: uppercase; cursor: pointer; min-height: 36px; }
 .fchip[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
 ul.legs { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
@@ -278,7 +281,7 @@ const START = 1000;
 const S = {
   me: null, isOwner: false,
   ready: false, offline: false, games: {}, players: {}, history: {}, gLoaded: false, pLoaded: false,
-  tab: 'board', renameDraft: null, slip: [], mode: 'parlay', sheetOpen: false, league: 'all', stake: '', handleDraft: '', drafts: {}, confirmDel: null, settle: {},
+  tab: 'board', tz: (() => { try { return localStorage.getItem('pb-tz') || ''; } catch { return ''; } })(), renameDraft: null, slip: [], mode: 'parlay', sheetOpen: false, league: 'all', stake: '', handleDraft: '', drafts: {}, confirmDel: null, settle: {},
   dirty: false, busy: false, err: ''
 };
 const TABS = [['board','Board'],['picks','My picks'],['standings','Standings'],['book','Run the book']];
@@ -343,9 +346,25 @@ function priceOf(g, market, side) {
   return (side === 'under' ? g.underOdds : null) ?? g.totalOdds ?? -110;
 }
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-const fmtKick = iso => { const d = new Date(iso); return isNaN(d) ? 'TBD' : d.toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); };
-const dayKey = iso => { const d = new Date(iso); return isNaN(d) ? 'TBD' : d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }); };
-const toLocalInput = iso => { const d = new Date(iso); if (isNaN(d)) return ''; const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
+// Time zone: '' = this device's zone; otherwise an IANA zone the viewer picked (remembered in this browser only).
+const TZS = [['', 'Auto'], ['America/New_York', 'Eastern'], ['America/Chicago', 'Central'], ['America/Denver', 'Mountain'], ['America/Phoenix', 'Arizona'],
+  ['America/Los_Angeles', 'Pacific'], ['America/Anchorage', 'Alaska'], ['Pacific/Honolulu', 'Hawaii'], ['Europe/London', 'UK'], ['Europe/Paris', 'Central Europe']];
+const tzOpt = () => S.tz ? { timeZone: S.tz } : {};
+const tzAbbr = (tz = S.tz) => new Intl.DateTimeFormat(undefined, { ...(tz ? { timeZone: tz } : {}), timeZoneName: 'shortGeneric' }).formatToParts(new Date()).find(p => p.type === 'timeZoneName')?.value || '';
+const fmtKick = iso => { const d = new Date(iso); return isNaN(d) ? 'TBD' : d.toLocaleString(undefined, { ...tzOpt(), weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }); };
+const dayKey = iso => { const d = new Date(iso); return isNaN(d) ? 'TBD' : d.toLocaleDateString(undefined, { ...tzOpt(), weekday: 'long', month: 'long', day: 'numeric' }); };
+// wall-clock fields of an instant in the chosen zone, and the zone's offset from UTC at that instant
+const zoneParts = ms => Object.fromEntries(new Intl.DateTimeFormat('en-US', { ...tzOpt(), hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+  .formatToParts(new Date(ms)).filter(p => p.type !== 'literal').map(p => [p.type, +p.value]));
+const zoneOffset = ms => { const z = zoneParts(ms); return Date.UTC(z.year, z.month - 1, z.day, z.hour % 24, z.minute) - Math.floor(ms / 60e3) * 60e3; };
+const toLocalInput = iso => { const d = new Date(iso); if (isNaN(d)) return ''; const z = zoneParts(+d), p = n => String(n).padStart(2, '0'); return `${z.year}-${p(z.month)}-${p(z.day)}T${p(z.hour % 24)}:${p(z.minute)}`; };
+// a datetime-local value read as wall-clock time in the chosen zone (two passes to land right around DST changes)
+const fromLocalInput = v => {
+  const m = /^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d)/.exec(v || ''); if (!m) return new Date(NaN);
+  const wall = Date.UTC(+m[1], m[2] - 1, +m[3], +m[4], +m[5]);
+  let t = wall - zoneOffset(wall); t = wall - zoneOffset(t);
+  return new Date(t);
+};
 const isLocked = g => !!(g && (g.final || g.locked || Date.now() >= Date.parse(g.startsAt)));
 const gameState = g => g.final ? 'final' : isLocked(g) ? 'locked' : 'open';
 
@@ -480,7 +499,8 @@ function viewBoard() {
   let html = joinBlock();
   const wk = curWeek();
   html += `<div><h1>${wk ? `Week ${wk} board` : 'The board'}</h1><p class="sub">Lines lock at game time. You get ${fmtU(START)} units a week to spread across that week’s games, and anything you don’t bet is gone when the week ends. Tap two or more lines to build a parlay, from different games or the same one.</p></div>`;
-  if (leagues.length > 1) html += `<div class="filters" role="group" aria-label="League">${['all', ...leagues].map(k => `<button type="button" class="fchip" data-league="${esc(k)}" aria-pressed="${S.league === k}">${k === 'all' ? 'All' : esc(k)}</button>`).join('')}</div>`;
+  const tzPick = `<label class="tzpick">Times in <select id="tz-select" aria-label="Time zone">${TZS.map(([z, name]) => `<option value="${z}"${z === S.tz ? ' selected' : ''}>${name}${z ? '' : ` (${esc(tzAbbr(''))})`}</option>`).join('')}</select></label>`;
+  html += `<div class="boardbar">${leagues.length > 1 ? `<div class="filters" role="group" aria-label="League">${['all', ...leagues].map(k => `<button type="button" class="fchip" data-league="${esc(k)}" aria-pressed="${S.league === k}">${k === 'all' ? 'All' : esc(k)}</button>`).join('')}</div>` : '<span></span>'}${all.length ? tzPick : ''}</div>`;
   if (!all.length) {
     html += `<div class="empty-state"><h2>No games posted yet</h2><p>${S.isOwner ? 'Open <a href="#book">Run the book</a> to post games and lines.' : 'The commissioner hasn’t posted lines yet. Check back soon.'}</p></div>`;
     return html;
@@ -624,7 +644,7 @@ function stepChart(name, pts, fmt, scale, end) {
   let d = `M${x(pts[0].t)},${y(pts[0].v)}`;
   for (let i = 1; i < pts.length; i++) d += `H${x(pts[i].t)}V${y(pts[i].v)}`;
   d += `H${x(t1)}`;
-  const when = t => new Date(t).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const when = t => new Date(t).toLocaleString(undefined, { ...tzOpt(), month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
   const dots = pts.map((p, i) => `<g><title>${esc(when(p.t))}: ${esc(fmt(p.v))}</title><circle cx="${x(p.t)}" cy="${y(p.v)}" r="8" fill="transparent"/><circle cx="${x(p.t)}" cy="${y(p.v)}" r="${i === pts.length - 1 ? 3.5 : 2.5}" class="${i === pts.length - 1 ? 'now' : 'pt'}"/></g>`).join('');
   const a = fmt(pts[0].v), b = fmt(pts[pts.length - 1].v), n = pts.length - 1;
   return `<figure class="move" aria-label="${esc(`${name}: opened ${a}, now ${b}, ${n} move${n > 1 ? 's' : ''}`)}">
@@ -648,8 +668,8 @@ function gameForm(id, submitLabel) {
   return `<form class="form" data-act="savegame" data-id="${id}">
     ${f('away', 'Away team', 'text', 'required placeholder="Jacksonville Jaguars"')}
     ${f('home', 'Home team', 'text', 'required placeholder="Baltimore Ravens"')}
-    ${f('startsAt', 'Start (your time)', 'datetime-local', 'required')}
-    ${f('week', 'Week (blank = from date)', 'number', `min="1" step="1" placeholder="${d.startsAt ? weekFromDate(new Date(d.startsAt).toISOString()) : 'auto'}"`)}
+    ${f('startsAt', `Start (${tzAbbr()})`, 'datetime-local', 'required')}
+    ${f('week', 'Week (blank = from date)', 'number', `min="1" step="1" placeholder="${d.startsAt && !isNaN(fromLocalInput(d.startsAt)) ? weekFromDate(fromLocalInput(d.startsAt).toISOString()) : 'auto'}"`)}
     ${f('league', 'League', 'text', `list="league-list" placeholder="NFL, NBA or NHL"`)}
     <datalist id="league-list">${LEAGUES.map(l => `<option value="${l}">`).join('')}</datalist>
     ${f('awayML', 'Away moneyline', 'number', 'required step="1" placeholder="+170"')}
@@ -904,7 +924,7 @@ async function cancelBet(id) {
 async function saveGame(id) {
   const d = draftFor(id);
   const num = k => Number(d[k]);
-  const startsAt = new Date(d.startsAt);
+  const startsAt = fromLocalInput(d.startsAt);
   if (!d.away.trim() || !d.home.trim() || isNaN(startsAt)) { toast('Fill in both teams and a kickoff time.'); return; }
   const week = String(d.week).trim() === '' ? weekFromDate(startsAt.toISOString()) : +d.week;
   if (!(Number.isInteger(week) && week >= 1)) { toast('Week has to be 1 or higher.'); return; }
@@ -980,6 +1000,13 @@ document.addEventListener('input', e => {
   else if (t.id === 'rename-input') S.renameDraft = t.value;
   else if (t.dataset.draft) draftFor(t.dataset.draft)[t.dataset.key] = t.value;
   else if (t.dataset.settle) { (S.settle[t.dataset.settle] ||= {})[t.dataset.key] = t.value; }
+});
+document.addEventListener('change', e => {
+  if (e.target.id !== 'tz-select') return;
+  S.tz = e.target.value;
+  try { if (S.tz) localStorage.setItem('pb-tz', S.tz); else localStorage.removeItem('pb-tz'); } catch {}
+  S.drafts = {};   // open game forms were filled in the old zone
+  render();
 });
 document.addEventListener('submit', e => {
   const f = e.target; e.preventDefault();
