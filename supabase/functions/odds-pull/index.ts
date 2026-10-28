@@ -1,4 +1,5 @@
-// Daily odds pull: every listed upcoming NFL/NBA/NHL game from The Odds API → public.games.
+// Daily odds pull: every listed upcoming NFL/NBA/NHL game from The Odds API → public.games,
+// plus final scores for games that have finished (settling every pick on them).
 // Called by pg_cron (supabase/schedule.sql) with an x-cron-secret header; deploy with JWT verification OFF.
 // Secrets (Dashboard → Edge Functions → Secrets): ODDS_API_KEY, CRON_SECRET; optional ODDS_BOOK (default draftkings).
 // SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are provided by Supabase automatically.
@@ -8,13 +9,17 @@
 //   (a hand-entered game), which is then updated in place instead of duplicated
 // - open game → update only the line columns that changed
 // - started / final / locked games, and anything starting within 15 min, are left alone
-// Scores, locks and everyone's tickets are never touched.
+// Settling: for each league with a started, unsettled game from the last 3 days, pull /scores?daysFrom=3
+// (2 credits a league) and set games.final = { away, home } on completed games — matched by event id, or for a
+// hand-entered game by home + away within 36h. Only final is written, and only while it is still null.
+// Unsettled games older than 3 days are listed as needsHand (settle them in Run the book).
+// Locks and everyone's tickets are never touched.
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 
 const SPORTS: Record<string, string> = { nfl: "americanfootball_nfl", nba: "basketball_nba", nhl: "icehockey_nhl" };
 // Book weeks run Tue→Mon on the NFL calendar; must match WEEK1 in index.html.
 const WEEK1 = Date.parse("2026-09-08T12:00:00Z"), WEEK_MS = 7 * 864e5;
-const SOON = 15 * 60e3, SAME_GAME = 36 * 3600e3;
+const SOON = 15 * 60e3, SAME_GAME = 36 * 3600e3, SCORE_DAYS = 3;
 const LINE_COLS = ["starts_at", "week", "away_ml", "home_ml", "home_spread", "spread_odds", "away_spread_odds",
   "total", "total_odds", "under_odds", "source"];
 
@@ -64,6 +69,36 @@ Deno.serve(async (req) => {
   const from = new Date(now).toISOString().replace(/\.\d+Z$/, "Z");
   const pulled = new Map<string, Row>();
   let credits: string | null = null;
+
+  // ---------- final scores ----------
+  const { data: open, error: openErr } = await sb.from("games").select("id, league, away, home, starts_at")
+    .is("final", null).lt("starts_at", new Date(now).toISOString()).limit(5000);
+  if (openErr) return json({ error: openErr.message }, 500);
+  const leagueOf = (g: Row) => String(g.league).split(/\s/)[0].toLowerCase();
+  const recent = open.filter((g: Row) => now - Date.parse(g.starts_at as string) < SCORE_DAYS * 864e5);
+  const needsHand = open.filter((g: Row) => !recent.includes(g) || !SPORTS[leagueOf(g)])
+    .map((g: Row) => `${g.league} ${g.away} @ ${g.home} (${String(g.starts_at).slice(0, 10)})`);
+  const settled: string[] = [];
+  let inProgress = 0;
+  for (const lg of new Set(recent.map(leagueOf))) {
+    if (!SPORTS[lg]) continue;
+    const r = await fetch(`https://api.the-odds-api.com/v4/sports/${SPORTS[lg]}/scores?${new URLSearchParams({ apiKey: key, daysFrom: String(SCORE_DAYS), dateFormat: "iso" })}`);
+    if (!r.ok) return json({ error: `${lg} scores: HTTP ${r.status} ${(await r.text()).slice(0, 300)}` }, 502);
+    credits = r.headers.get("x-requests-remaining");
+    const events = await r.json();
+    for (const g of recent.filter((g: Row) => leagueOf(g) === lg)) {
+      const ev = events.find((e: any) => `${lg}-${e.id}` === g.id) || events.find((e: any) => e.home_team === g.home && e.away_team === g.away
+        && Math.abs(Date.parse(e.commence_time) - Date.parse(g.starts_at as string)) <= SAME_GAME);
+      const pts = (team: unknown) => { const s = ev?.scores?.find((x: any) => x.name === team)?.score; return s == null || s === "" ? NaN : Number(s); };
+      const final = { away: pts(g.away), home: pts(g.home) };
+      if (!ev?.completed || !Number.isFinite(final.away) || !Number.isFinite(final.home)) { inProgress++; continue; }
+      const { data, error } = await sb.from("games").update({ final }).eq("id", g.id).is("final", null).select("id");
+      if (error) return json({ error: `settle ${g.id}: ${error.message}` }, 500);
+      if (data?.length) settled.push(`${g.league} ${g.away} ${final.away} @ ${g.home} ${final.home}`);
+    }
+  }
+
+  // ---------- lines ----------
   const noLines: string[] = [];
   for (const [lg, sport] of Object.entries(SPORTS)) {
     const q = new URLSearchParams({ apiKey: key, regions: "us", markets: "h2h,spreads,totals", oddsFormat: "american", dateFormat: "iso", commenceTimeFrom: from });
@@ -116,6 +151,7 @@ Deno.serve(async (req) => {
   const added: Record<string, number> = {};
   for (const g of inserts) added[g.league as string] = (added[g.league as string] || 0) + 1;
   const summary = {
+    settled, waitingOnScores: inProgress, needsHand,
     added, lineMoves: moved.length, moved, unchanged, skipped, noLines: noLines.length,
     creditsLeft: credits == null ? null : Number(credits),
     lowCredits: credits != null && Number(credits) < 90,

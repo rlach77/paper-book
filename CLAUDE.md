@@ -44,9 +44,9 @@ Parlays: 2–8 legs, one per market per game (same-game parlays allowed; tapping
 
 ## Daily odds (`supabase/functions/odds-pull/index.ts`)
 
-Deno Edge Function, called daily by pg_cron at 17:00 UTC (`supabase/schedule.sql`) with an `x-cron-secret` header (deployed with JWT verification off). Secrets: `ODDS_API_KEY`, `CRON_SECRET`, optional `ODDS_BOOK` (default draftkings). Pulls every listed upcoming NFL/NBA/NHL game (no time cap — Ryan wants far-off listed games like NBA Christmas kept), then: new id `<league>-<event id>` → insert, unless a game already on the board has the same home + away within 36h (hand-entered `w9-…` games), which is updated in place; open games → update only changed line columns, re-checking final/locked/started in the update; started/final/locked or starting within 15 min → skipped. 9 Odds API credits a run (~270/month; 476 left on Oct 27). Returns and logs a JSON summary. Books list NFL ~a week out, NBA/NHL ~1–2 days out.
+Deno Edge Function, called daily by pg_cron at 17:00 UTC (`supabase/schedule.sql`) with an `x-cron-secret` header (deployed with JWT verification off). Secrets: `ODDS_API_KEY`, `CRON_SECRET`, optional `ODDS_BOOK` (default draftkings). Pulls every listed upcoming NFL/NBA/NHL game (no time cap — Ryan wants far-off listed games like NBA Christmas kept), then: new id `<league>-<event id>` → insert, unless a game already on the board has the same home + away within 36h (hand-entered `w9-…` games), which is updated in place; open games → update only changed line columns, re-checking final/locked/started in the update; started/final/locked or starting within 15 min → skipped. Before the lines it settles finished games: for each league with a started, unsettled game from the last 3 days it calls `/scores?daysFrom=3` (2 credits) and sets `final = {away, home}` on completed games (matched by `<league>-<event id>`, or home + away within 36h for hand-entered games; only while `final` is still null; locked games settle too). Older unsettled games come back in `needsHand`. Credits: 9 a run for lines + up to 6 for scores ≈ 450/month in season, against the free plan's 500 (476 left on Oct 27) — `lowCredits` flags < 90. Returns and logs a JSON summary (`settled`, `waitingOnScores`, `needsHand`, `added`, `moved`, …). Books list NFL ~a week out, NBA/NHL ~1–2 days out.
 
-Tested only in a browser harness (TypeScript transpiled, fake Odds API + fake DB) — no Deno on the Mac, and not yet run against real Supabase.
+Lines: running in production since Oct 28. Score settling: tested only in a browser harness (TypeScript transpiled, fake Odds API + fake DB; no Deno on the Mac). Deploying a change = paste `index.ts` into the dashboard editor for `odds-pull` and Deploy.
 
 ## Local preview
 
@@ -61,4 +61,4 @@ python3 scripts/build_preview.py && python3 -m http.server 8000
 
 ## Ideas not built yet
 
-Automatic final scores (Odds API `/scores` endpoint could fill `final` from the same edge function); server-side weekly bankroll check; push-style reminders before lock.
+Server-side weekly bankroll check; push-style reminders before lock.
