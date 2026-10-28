@@ -44,7 +44,7 @@ insert into public.admins (user_id) select id from auth.users where email = 'you
 ```
 Reload the site and the **Run the book** tab appears.
 
-## 5. Daily odds pull (runs on Supabase, Mac can be off)
+## 5. Hourly odds pull (runs on Supabase, Mac can be off)
 1. Make a random secret in your terminal and keep it handy: `openssl rand -hex 24`
 2. Supabase → **Edge Functions → Secrets**: add
    - `ODDS_API_KEY` = your Odds API key

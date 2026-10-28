@@ -1,6 +1,6 @@
-// Daily odds pull: every listed upcoming NFL/NBA/NHL game from The Odds API → public.games,
+// Hourly odds pull: every listed upcoming NFL/NBA/NHL game from The Odds API → public.games,
 // plus final scores for games that have finished (settling every pick on them).
-// Called by pg_cron (supabase/schedule.sql) with an x-cron-secret header; deploy with JWT verification OFF.
+// Called every hour by pg_cron (supabase/schedule.sql) with an x-cron-secret header; deploy with JWT verification OFF.
 // Secrets (Dashboard → Edge Functions → Secrets): ODDS_API_KEY, CRON_SECRET; optional ODDS_BOOK (default draftkings).
 // SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are provided by Supabase automatically.
 //
@@ -154,7 +154,7 @@ Deno.serve(async (req) => {
     settled, waitingOnScores: inProgress, needsHand,
     added, lineMoves: moved.length, moved, unchanged, skipped, noLines: noLines.length,
     creditsLeft: credits == null ? null : Number(credits),
-    lowCredits: credits != null && Number(credits) < 90,
+    lowCredits: credits != null && Number(credits) < 1000,
   };
   console.log(JSON.stringify(summary));
   return json(summary);
