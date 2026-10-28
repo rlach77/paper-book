@@ -1001,10 +1001,15 @@ async function boot() {
   const q = new URLSearchParams(location.search), authErr = q.get('error_description') || new URLSearchParams(location.hash.slice(1)).get('error_description');
   const verifier = Object.keys(localStorage).some(k => k.endsWith('-code-verifier')), tried = sessionStorage.getItem('pb-signing-in');
   sessionStorage.removeItem('pb-signing-in');
+  const events = [];
+  sb.auth.onAuthStateChange(ev => events.push(ev));
   const { error: initErr } = await sb.auth.initialize();
-  const { data: { session } } = await sb.auth.getSession();
+  const stored = (() => { try { return JSON.parse(localStorage.getItem(Object.keys(localStorage).find(k => /^sb-.*-auth-token$/.test(k))) || 'null'); } catch { return 'unreadable'; } })();
+  const { data: { session }, error: sessErr } = await sb.auth.getSession();
   if (!session && (tried || authErr || q.has('code'))) {
-    const why = authErr || initErr?.message || (!q.has('code') ? `Google sent you back to ${location.origin + location.pathname} without a sign-in code` : !verifier ? 'this browser lost the sign-in check from before Google (private window, or started in another browser?)' : 'unknown');
+    const why = authErr || initErr?.message || (!q.has('code') ? `Google sent you back to ${location.origin + location.pathname} without a sign-in code` : !verifier ? 'this browser lost the sign-in check from before Google (private window, or started in another browser?)'
+      : sessErr ? sessErr.message
+      : `unknown [events ${events.join(',') || 'none'}; stored ${stored ? (stored.expires_at ? 'expires in ' + Math.round(stored.expires_at - Date.now() / 1000) + 's' : 'yes') : 'no'}]`);
     console.warn('[sign-in]', { why, url: location.origin + location.pathname, code: q.has('code'), verifier, initErr });
     setTimeout(() => toast('Google sign-in failed: ' + why, 15000), 0);
   }
