@@ -996,7 +996,10 @@ setInterval(() => { if (!isTyping()) render(); }, 30000);
 async function boot() {
   route();
   if (!sb) { S.ready = true; S.offline = true; render(); return; }
+  // a failed Google sign-in comes back with ?error_description=… or #error_description=…; say so instead of failing silently
+  const authErr = new URLSearchParams(location.search).get('error_description') || new URLSearchParams(location.hash.slice(1)).get('error_description');
   const { data: { session } } = await sb.auth.getSession();
+  if (authErr && !session) setTimeout(() => toast('Google sign-in failed: ' + authErr), 0);
   await applySession(session);
   // don't call Supabase inside the auth callback itself (it can deadlock); hop out of it first
   sb.auth.onAuthStateChange((ev, session) => {
