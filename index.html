@@ -1002,24 +1002,42 @@ async function boot() {
   const verifier = Object.keys(localStorage).some(k => k.endsWith('-code-verifier')), tried = sessionStorage.getItem('pb-signing-in');
   sessionStorage.removeItem('pb-signing-in');
   const events = [];
+  let step = 'initialize';
   sb.auth.onAuthStateChange(ev => events.push(ev));
+  // sign-in debugging: if boot is still stuck after 10s, say which step and what the saved session looks like
+  const storedInfo = () => {
+    try {
+      const st = JSON.parse(localStorage.getItem(Object.keys(localStorage).find(k => /^sb-.*-auth-token$/.test(k))) || 'null');
+      if (!st) return 'no saved session';
+      const iat = JSON.parse(atob(st.access_token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).iat;
+      return `saved session expires in ${Math.round(st.expires_at - Date.now() / 1000)}s, issued ${Math.round(Date.now() / 1000 - iat)}s ago, refresh token ${st.refresh_token ? 'yes' : 'no'}`;
+    } catch (e) { return 'saved session unreadable: ' + e.message; }
+  };
+  setTimeout(() => {
+    if (S.ready) return;
+    const msg = `Stuck at ${step} [events ${events.join(',') || 'none'}; ${storedInfo()}]`;
+    console.warn('[sign-in]', msg); toast(msg, 60000);
+  }, 10000);
   const { error: initErr } = await sb.auth.initialize();
-  const stored = (() => { try { return JSON.parse(localStorage.getItem(Object.keys(localStorage).find(k => /^sb-.*-auth-token$/.test(k))) || 'null'); } catch { return 'unreadable'; } })();
+  const stored = storedInfo();
+  step = 'getSession';
   const { data: { session }, error: sessErr } = await sb.auth.getSession();
   if (!session && (tried || authErr || q.has('code'))) {
     const why = authErr || initErr?.message || (!q.has('code') ? `Google sent you back to ${location.origin + location.pathname} without a sign-in code` : !verifier ? 'this browser lost the sign-in check from before Google (private window, or started in another browser?)'
       : sessErr ? sessErr.message
-      : `unknown [events ${events.join(',') || 'none'}; stored ${stored ? (stored.expires_at ? 'expires in ' + Math.round(stored.expires_at - Date.now() / 1000) + 's' : 'yes') : 'no'}]`);
+      : `unknown [events ${events.join(',') || 'none'}; ${stored}]`);
     console.warn('[sign-in]', { why, url: location.origin + location.pathname, code: q.has('code'), verifier, initErr });
     setTimeout(() => toast('Google sign-in failed: ' + why, 15000), 0);
   }
   // Google sends people back with ?code=… (or an error); tidy it out of the address bar once it's been used
   if (/[?&](code|error)=/.test(location.search)) history.replaceState(null, '', location.pathname + location.hash);
+  step = 'is_admin';
   await applySession(session);
   // don't call Supabase inside the auth callback itself (it can deadlock); hop out of it first
   sb.auth.onAuthStateChange((ev, session) => {
     if (ev === 'SIGNED_IN' || ev === 'SIGNED_OUT') setTimeout(() => applySession(session).then(() => { S.slip = []; route(); }), 0);
   });
+  step = 'loading games';
   try { await loadAll(); } catch (e) { toast('Couldn’t load the book. Reload to try again.'); }
   S.ready = true; route();
   subscribe();
