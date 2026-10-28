@@ -4,7 +4,7 @@ A fake-money sportsbook for a group of friends. Everyone gets 1,000 units **per 
 
 ## Where it lives
 
-- **Site:** https://rlach77.github.io/paper-book/ — GitHub Pages from `main` of the **public** repo `rlach77/paper-book` (personal account, not `RL-VH`; `gh auth switch -u rlach77` before any `gh`/push, and switch back to RL-VH after if needed). Commit/push only when asked.
+- **Site:** https://book.reasurf.com/ (custom domain, CNAME at Namecheap → rlach77.github.io; the old rlach77.github.io/paper-book URL redirects) — GitHub Pages from `main` of the **public** repo `rlach77/paper-book` (personal account, not `RL-VH`; `gh auth switch -u rlach77` before any `gh`/push, and switch back to RL-VH after if needed). Commit/push only when asked.
 - **Supabase project:** `xbnmrdpbvtsvlmxmzfgi` (URL + publishable key in `config.js`). Google sign-in, the `odds-pull` Edge Function and its pg_cron schedule are live as of Oct 28, 2026. Ryan's player handle is "Cream AssduelJizzbar".
 - **Retired:** the claude.ai artifact https://claude.ai/artifact/3RyqRkx7JViaC3n7C3cKPv and its ArtifactData (delete only if Ryan asks); the claude.ai scheduled task `paper-book-daily-odds` is disabled. `scripts/fetch_odds.py` remains as a manual local pull tool.
 
