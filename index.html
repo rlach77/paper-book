@@ -778,7 +778,7 @@ const tabLocks = {};
 const authLog = [];
 const authDebug = (_prefix, ...a) => { authLog.push(a.map(x => typeof x === 'string' ? x : x && typeof x === 'object' ? (x.message || '{' + Object.keys(x).join(',') + '}') : String(x)).join(' ').slice(0, 120)); if (authLog.length > 60) authLog.shift(); };
 const tabLock = (name, _timeout, fn) => { const run = (tabLocks[name] || Promise.resolve()).then(fn, fn); tabLocks[name] = run.catch(() => {}); return run; };
-const sb = window.supabase && CFG.supabaseUrl && !/YOUR-/.test(CFG.supabaseUrl + CFG.supabaseKey) ? window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseKey, { auth: { flowType: 'pkce', lock: tabLock, debug: authDebug } }) : null;
+const sb = window.supabase && CFG.supabaseUrl && !/YOUR-/.test(CFG.supabaseUrl + CFG.supabaseKey) ? window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseKey, { auth: { flowType: 'pkce', detectSessionInUrl: false, lock: tabLock, debug: authDebug } }) : null;
 const GAME_COLS = { startsAt: 'starts_at', awayML: 'away_ml', homeML: 'home_ml', homeSpread: 'home_spread', spreadOdds: 'spread_odds', awaySpreadOdds: 'away_spread_odds', totalOdds: 'total_odds', underOdds: 'under_odds', updatedAt: 'updated_at' };
 const PLAYER_COLS = { joinedAt: 'joined_at' };
 const toRow = (o, cols) => Object.fromEntries(Object.entries(o).map(([k, v]) => [cols[k] || k, v]));
@@ -1025,7 +1025,9 @@ async function boot() {
     const msg = `Stuck at ${step} [events ${events.join(',') || 'none'}; ${storedInfo()}]`;
     console.warn('[sign-in]', msg); toast(msg, 60000);
   }, 10000);
-  const { error: initErr } = await sb.auth.initialize();
+  let { error: initErr } = await sb.auth.initialize();
+  // swap Google's ?code= for a session ourselves: the library's own URL check missed it in Safari
+  if (q.has('code')) { step = 'exchanging the sign-in code'; initErr = (await sb.auth.exchangeCodeForSession(q.get('code'))).error || initErr; }
   const stored = storedInfo();
   step = 'getSession';
   const { data: { session }, error: sessErr } = await sb.auth.getSession();
