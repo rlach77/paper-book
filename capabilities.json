@@ -1,0 +1,10 @@
+{
+  "db": {
+    "rules": [
+      { "path": "games", "read": "view", "write": "owner" },
+      { "path": "players", "read": "view", "write": "owner" },
+      { "path": "players/{self}", "write": "interact" }
+    ]
+  },
+  "user": {}
+}

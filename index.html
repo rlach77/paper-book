@@ -1,0 +1,1015 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Todd Albert’s Cuckin’ Sports Book</title>
+<meta name="description" content="Fake-money pick'em sportsbook for friends.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23101828'/%3E%3Cpath d='M19 6 13 26' stroke='%23F2B705' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: sportsbook board (game cards w/ three markets) + a ticket-stub bet slip column; slip becomes a bottom sheet on phones */
+:root {
+  --bg: #EEF1F6;
+  --surface: #FFFFFF;
+  --surface-2: #F6F8FB;
+  --ink: #101828;
+  --muted: #5A6478;
+  --line: #D8DEE8;
+  --band: #101828;
+  --band-ink: #F3F5F8;
+  --accent: #F2B705;
+  --accent-ink: #101828;
+  --accent-soft: #FFF4CC;
+  --win: #18804A;
+  --loss: #C0352A;
+  --push: #6B7280;
+  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px -12px rgba(16,24,40,.18);
+  --f-display: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --f-body: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --band: #060A16; --band-ink: #E8ECF4; --bg: #0B1020; --surface: #141B2E; --surface-2: #1A2238; --ink: #E8ECF4; --muted: #97A1B7;
+    --line: #26304A; --accent: #F5C02B; --accent-ink: #101828; --accent-soft: #3A3115;
+    --win: #3CC57A; --loss: #F06A5E; --push: #9AA3B5;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 28px -14px rgba(0,0,0,.6);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --band: #060A16; --band-ink: #E8ECF4; --bg: #0B1020; --surface: #141B2E; --surface-2: #1A2238; --ink: #E8ECF4; --muted: #97A1B7;
+  --line: #26304A; --accent: #F5C02B; --accent-ink: #101828; --accent-soft: #3A3115;
+  --win: #3CC57A; --loss: #F06A5E; --push: #9AA3B5;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 28px -14px rgba(0,0,0,.6);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+[hidden] { display: none !important; }
+body { padding-bottom: env(safe-area-inset-bottom, 0px); }
+body { background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.45; }
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.num { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+
+.top { background: var(--band); color: var(--band-ink); }
+.top-inner { max-width: 1140px; margin: 0 auto; padding-block: 14px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.brand { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.brand b { font-family: var(--f-display); font-weight: 800; font-size: clamp(22px, 6.2vw, 30px); letter-spacing: .02em; text-transform: uppercase; line-height: 1.05; text-wrap: balance; }
+.brand b i { font-style: normal; color: var(--accent); }
+.wallet { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.wallet .pill { border: 1px solid color-mix(in srgb, var(--band-ink) 25%, transparent); border-radius: 999px; padding: 4px 12px; font-size: 13px; display: flex; gap: 6px; align-items: baseline; }
+.wallet .pill span { opacity: .7; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+.wallet .pill strong { font-family: var(--f-mono); font-weight: 600; }
+.wallet .pill.link { background: none; color: inherit; cursor: pointer; font-size: 12px; opacity: .8; }
+.wallet .pill.link:hover { opacity: 1; }
+.wallet a.pill.name { color: inherit; text-decoration: none; }
+.wallet a.pill.name span { opacity: 1; font-size: 12px; text-transform: none; letter-spacing: 0; font-weight: 600; }
+.wallet a.pill.name span + span { opacity: .6; }
+.wallet a.pill.name:hover { border-color: var(--accent); }
+.namebox { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 8px; }
+.namebox label { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+.namebox label .muted { text-transform: none; letter-spacing: 0; font-weight: 400; }
+.namebox input { flex: 1 1 180px; }
+
+nav.tabs { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--surface); border-bottom: 1px solid var(--line); }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--surface); }
+.tabs-inner { max-width: 1140px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: flex; gap: 4px; overflow-x: auto; }
+.tabs a { font-family: var(--f-display); font-weight: 600; font-size: 17px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); text-decoration: none; padding: 12px 12px 10px; border-bottom: 3px solid transparent; white-space: nowrap; }
+.tabs a[aria-current="page"] { color: var(--ink); border-bottom-color: var(--accent); }
+
+.wrap { max-width: 1140px; margin: 0 auto; padding-block: 20px 120px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 24px; align-items: start; }
+@media (max-width: 860px) { .wrap { grid-template-columns: minmax(0, 1fr); } }
+#view { min-width: 0; display: grid; gap: 16px; }
+
+h1, h2, h3 { font-family: var(--f-display); text-transform: uppercase; letter-spacing: .03em; margin: 0; text-wrap: balance; line-height: 1.1; }
+h1 { font-size: 28px; font-weight: 700; }
+h2 { font-size: 20px; font-weight: 700; }
+.sub { color: var(--muted); font-size: 14px; margin: 4px 0 0; }
+.eyebrow { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+
+.notice { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.notice.join { border-color: var(--accent); background: var(--accent-soft); }
+.notice p { margin: 0; max-width: 60ch; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+input[type=text], input[type=number], input[type=datetime-local], select { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; min-width: 0; }
+input[type=number] { font-family: var(--f-mono); }
+.btn { background: var(--ink); color: var(--bg); border: 0; border-radius: 8px; padding: 9px 14px; font-weight: 600; cursor: pointer; }
+.btn.accent { background: var(--accent); color: var(--accent-ink); }
+.btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+.btn.danger { background: transparent; color: var(--loss); border: 1px solid var(--loss); }
+.btn.small { padding: 5px 10px; font-size: 13px; }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+
+.day { display: grid; gap: 10px; }
+.day > .eyebrow { padding-left: 2px; }
+.game { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 8px; }
+.game-meta { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.state { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); }
+.state.open { color: var(--win); border-color: color-mix(in srgb, var(--win) 40%, transparent); }
+.state.locked { color: var(--muted); }
+.state.final { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.mkt { display: grid; grid-template-columns: minmax(0, 1fr) repeat(3, minmax(62px, 88px)); gap: 6px; align-items: center; }
+.mkt .hd { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); text-align: center; }
+.team { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; column-gap: 8px; align-items: center; min-width: 0; }
+.team .badge { grid-row: span 2; }
+.team .ha { font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); line-height: 1.2; }
+.team .who { grid-column: 2; display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.team .nm { font-family: var(--f-display); font-weight: 600; font-size: 20px; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.team .city { color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 520px) {
+  .team .city { display: none; } .team .nm { font-size: 18px; }
+  .mkt { grid-template-columns: minmax(0, 1fr) repeat(3, 66px); gap: 5px; }
+  .odd .ln { font-size: 13px; }
+  .team { column-gap: 6px; } .team .badge { width: 28px; height: 28px; font-size: 10.5px; }
+  .moves-row { gap: 8px 10px; } .move svg { width: 96px; height: auto; }
+}
+.team .score { grid-column: 3; grid-row: 1 / span 2; font-family: var(--f-mono); font-weight: 600; font-size: 18px; }
+/* team badge: monogram in team colors (original graphic, not a team logo) */
+.badge { width: 32px; height: 32px; border-radius: 50%; display: inline-grid; place-items: center; flex: none; background: var(--tb); color: var(--tt); box-shadow: inset 0 0 0 2.5px var(--tr), 0 0 0 1px var(--line); font-family: var(--f-display); font-weight: 800; font-size: 12px; letter-spacing: .02em; line-height: 1; }
+.team.won .nm::after { content: " ◂"; color: var(--accent); }
+.odd { background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 6px 4px; display: flex; flex-direction: column; align-items: center; line-height: 1.15; cursor: pointer; font-family: var(--f-mono); font-variant-numeric: tabular-nums; min-height: 44px; justify-content: center; }
+.odd .ln { font-weight: 600; font-size: 14px; white-space: nowrap; }
+.odd .od { font-size: 12px; color: var(--muted); }
+.odd:hover:not(:disabled) { border-color: var(--ink); }
+.odd[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.odd[aria-pressed="true"] .od { color: var(--accent-ink); }
+.odd.mine { box-shadow: inset 0 -3px 0 var(--accent); }
+.odd:disabled { cursor: default; opacity: .55; }
+.moves { border-top: 1px dashed var(--line); padding-top: 8px; display: grid; gap: 6px; }
+.moves-row { display: flex; flex-wrap: wrap; gap: 8px 18px; }
+.move { margin: 0; display: grid; gap: 3px; }
+.move figcaption { display: grid; font-size: 11px; color: var(--muted); line-height: 1.25; }
+.move figcaption .num { font-size: 12px; color: var(--ink); }
+.move figcaption b { font-weight: 600; }
+.move svg { display: block; overflow: visible; }
+.move .ln { fill: none; stroke: var(--muted); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.move .pt { fill: var(--muted); stroke: var(--surface); stroke-width: 1.5; }
+.move .now { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
+.game-foot { font-size: 13px; color: var(--muted); border-top: 1px dashed var(--line); padding-top: 8px; display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.game-foot b { color: var(--ink); font-weight: 600; }
+
+/* Bet slip: ticket stub with perforated top */
+.slip { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 64px); background: var(--surface); border-radius: 12px; box-shadow: var(--shadow); border: 1px solid var(--line); overflow: hidden; }
+.slip-head { background: var(--band); color: var(--band-ink); padding: 12px 16px 16px; position: relative; display: flex; justify-content: space-between; align-items: baseline; }
+.slip-head::after { content: ""; position: absolute; left: 0; right: 0; bottom: -6px; height: 12px; background: radial-gradient(circle at 6px 6px, var(--surface) 4.5px, transparent 5px) 0 0 / 14px 12px repeat-x; }
+.slip-head h2 { font-size: 22px; }
+.slip-head .x { background: none; border: 0; color: inherit; opacity: .7; cursor: pointer; font-size: 13px; }
+.slip-head .acts { display: flex; gap: 6px; align-items: center; }
+.slip-head .sheet { display: none; background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 999px; padding: 5px 12px; font-weight: 600; font-size: 13px; cursor: pointer; }
+.slip-head .sum { font-family: var(--f-mono); font-size: 13px; opacity: .8; margin-left: 8px; }
+.slip-body { padding: 18px 16px 16px; display: grid; gap: 12px; }
+.slip-body .empty { color: var(--muted); font-size: 14px; margin: 0; }
+.pick-line { display: grid; gap: 2px; }
+.pick-line .what { font-family: var(--f-display); font-size: 24px; font-weight: 700; line-height: 1.05; }
+.pick-line .ctx { font-size: 13px; color: var(--muted); }
+.kv { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; font-size: 14px; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; text-align: right; font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+.kv .big { font-size: 18px; font-weight: 600; color: var(--win); }
+.stake { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+.stake input { width: 100%; font-size: 18px; }
+.quick { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.err { color: var(--loss); font-size: 13px; margin: 0; }
+.hint { color: var(--muted); font-size: 13px; margin: 0; }
+.pick-line .what .od { font-size: 16px; }
+.slip-body.multi .pick-line .what { font-size: 18px; }
+.slip-body.multi .pick-line .what .od { font-size: 14px; }
+.legs-box { display: grid; gap: 10px; }
+.slip-body.multi .legs-box { gap: 0; }
+.slip-body.multi .leg { padding: 8px 0; border-bottom: 1px dashed var(--line); }
+.slip-body.multi .leg:last-child { border-bottom: 0; }
+.leg { display: flex; justify-content: space-between; align-items: start; gap: 8px; }
+.leg.clash .what { color: var(--loss); }
+.slip-body.multi .leg.clash { box-shadow: inset 3px 0 0 var(--loss); padding-left: 10px; }
+.x-leg { background: none; border: 1px solid var(--line); border-radius: 999px; width: 28px; height: 28px; flex: none; cursor: pointer; color: var(--muted); font-size: 16px; line-height: 1; }
+.x-leg:hover { color: var(--loss); border-color: var(--loss); }
+.seg { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { background: var(--surface-2); border: 0; padding: 8px 6px; font-weight: 600; font-size: 14px; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.filters { display: flex; gap: 6px; flex-wrap: wrap; }
+.fchip { background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; font-family: var(--f-display); font-weight: 600; font-size: 15px; letter-spacing: .04em; text-transform: uppercase; cursor: pointer; min-height: 36px; }
+.fchip[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+ul.legs { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+ul.legs li { display: flex; gap: 8px; justify-content: space-between; align-items: baseline; }
+@media (max-width: 860px) {
+  .slip { position: fixed; left: 0; right: 0; bottom: 0; top: auto; border-radius: 14px 14px 0 0; z-index: 20; max-height: 80vh; overflow-y: auto; padding-bottom: env(safe-area-inset-bottom, 0px); }
+  .slip .slip-head, .slip .slip-body { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  .slip.idle { display: none; }
+  .slip.collapsed .slip-body { display: none; }
+  .slip.collapsed .slip-head { padding-bottom: 12px; }
+  .slip.collapsed .slip-head::after { display: none; }
+  .slip-head .sheet { display: inline-block; }
+}
+
+/* tables / lists */
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: grid; gap: 12px; min-width: 0; }
+.tbl-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 10px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+tr:last-child td { border-bottom: 0; }
+td.r, th.r { text-align: right; font-family: var(--f-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+tr.me td { background: var(--accent-soft); }
+.rank { font-family: var(--f-display); font-weight: 700; font-size: 20px; width: 2ch; }
+.handle { font-weight: 600; }
+.up { color: var(--win); } .down { color: var(--loss); }
+
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+.stat { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+.stat .v { font-family: var(--f-mono); font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.stat .l { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+
+.chip { display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; border: 1px solid currentColor; }
+.chip.won { color: var(--win); } .chip.lost { color: var(--loss); } .chip.push { color: var(--push); } .chip.pending { color: var(--muted); border-style: dashed; } .chip.void { color: var(--push); border-style: dashed; }
+
+.ticket { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; padding: 12px 0; border-bottom: 1px dashed var(--line); }
+.ticket:last-child { border-bottom: 0; }
+.ticket .t1 { font-weight: 600; }
+.ticket .t2 { font-size: 13px; color: var(--muted); }
+.ticket .amt { text-align: right; font-family: var(--f-mono); font-variant-numeric: tabular-nums; font-size: 14px; }
+
+.feed li { list-style: none; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 14px; display: flex; gap: 8px; justify-content: space-between; flex-wrap: wrap; }
+.feed { margin: 0; padding: 0; }
+.feed li:last-child { border-bottom: 0; }
+
+.form { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.form label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
+.form label input, .form label select { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--ink); width: 100%; }
+.book-game { display: grid; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.book-game:last-child { border-bottom: 0; }
+.book-game .ttl { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; align-items: baseline; }
+
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom, 0px) + 20px); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-size: 14px; z-index: 40; box-shadow: var(--shadow); max-width: calc(100% - 32px); }
+.muted { color: var(--muted); }
+.empty-state { text-align: left; padding: 28px 20px; background: var(--surface); border: 1px dashed var(--line); border-radius: 12px; color: var(--muted); }
+.empty-state h2 { color: var(--ink); margin-bottom: 6px; }
+@media (prefers-reduced-motion: no-preference) { .odd { transition: background .12s, border-color .12s; } }
+</style>
+
+</head>
+<body>
+<header class="top">
+  <div class="top-inner">
+    <div class="brand"><b>Todd Albert’s <i>Cuckin’</i> Sports Book</b></div>
+    <div class="wallet" id="wallet"></div>
+  </div>
+</header>
+<nav class="tabs" aria-label="Sections">
+  <div class="tabs-inner" id="tabs"></div>
+</nav>
+<div class="wrap">
+  <main id="view" aria-live="polite"></main>
+  <aside class="slip idle" id="slip" aria-label="Bet slip"></aside>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(() => {
+const START = 1000;
+const S = {
+  me: null, isOwner: false,
+  ready: false, offline: false, games: {}, players: {}, history: {}, gLoaded: false, pLoaded: false,
+  tab: 'board', renameDraft: null, slip: [], mode: 'parlay', sheetOpen: false, league: 'all', stake: '', handleDraft: '', drafts: {}, confirmDel: null, settle: {},
+  dirty: false, busy: false, err: ''
+};
+const TABS = [['board','Board'],['picks','My picks'],['standings','Standings'],['book','Run the book']];
+
+// ---------- helpers ----------
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtOdds = n => (n > 0 ? '+' : '−') + Math.abs(n);
+const fmtLine = n => n === 0 ? 'PK' : (n > 0 ? '+' : '−') + Math.abs(n);
+const fmtU = n => (Math.round(n * 100) / 100).toLocaleString(undefined, { maximumFractionDigits: 2 });
+const fmtSigned = n => (n > 0 ? '+' : n < 0 ? '−' : '') + fmtU(Math.abs(n));
+const TWO_WORD = /\s(Maple Leafs|Blue Jackets|Golden Knights|Red Wings|Trail Blazers)$/;
+const nick = t => { t = String(t).trim(); const m = TWO_WORD.exec(t); if (m) return m[1]; const p = t.split(/\s+/); return p[p.length - 1]; };
+const city = t => { t = String(t).trim(); const m = TWO_WORD.exec(t); if (m) return t.slice(0, m.index); const p = t.split(/\s+/); return p.slice(0, -1).join(' '); };
+const profit = (stake, odds) => odds > 0 ? stake * odds / 100 : stake * 100 / Math.abs(odds);
+const dec = o => o > 0 ? 1 + o / 100 : 1 + 100 / Math.abs(o);
+const toAmerican = d => d >= 2 ? Math.round((d - 1) * 100) : Math.round(-100 / (d - 1));
+const LEAGUES = ['NFL', 'NBA', 'NHL'];
+// Team badges: "ABBR primary-color ring-color", keyed by full name without accents or periods.
+const TEAMS = {
+  'Arizona Cardinals': 'ARI 97233F FFB612', 'Atlanta Falcons': 'ATL A71930 000000', 'Baltimore Ravens': 'BAL 241773 9E7C0C', 'Buffalo Bills': 'BUF 00338D C60C30',
+  'Carolina Panthers': 'CAR 0085CA 101820', 'Chicago Bears': 'CHI 0B162A C83803', 'Cincinnati Bengals': 'CIN FB4F14 000000', 'Cleveland Browns': 'CLE 311D00 FF3C00',
+  'Dallas Cowboys': 'DAL 003594 869397', 'Denver Broncos': 'DEN FB4F14 002244', 'Detroit Lions': 'DET 0076B6 B0B7BC', 'Green Bay Packers': 'GB 203731 FFB612',
+  'Houston Texans': 'HOU 03202F A71930', 'Indianapolis Colts': 'IND 002C5F A2AAAD', 'Jacksonville Jaguars': 'JAX 006778 D7A22A', 'Kansas City Chiefs': 'KC E31837 FFB81C',
+  'Las Vegas Raiders': 'LV 000000 A5ACAF', 'Los Angeles Chargers': 'LAC 0080C6 FFC20E', 'Los Angeles Rams': 'LAR 003594 FFA300', 'Miami Dolphins': 'MIA 008E97 FC4C02',
+  'Minnesota Vikings': 'MIN 4F2683 FFC62F', 'New England Patriots': 'NE 002244 C60C30', 'New Orleans Saints': 'NO D3BC8D 101820', 'New York Giants': 'NYG 0B2265 A71930',
+  'New York Jets': 'NYJ 125740 FFFFFF', 'Philadelphia Eagles': 'PHI 004C54 A5ACAF', 'Pittsburgh Steelers': 'PIT FFB612 101820', 'San Francisco 49ers': 'SF AA0000 B3995D',
+  'Seattle Seahawks': 'SEA 002244 69BE28', 'Tampa Bay Buccaneers': 'TB D50A0A 34302B', 'Tennessee Titans': 'TEN 0C2340 4B92DB', 'Washington Commanders': 'WAS 5A1414 FFB612',
+  'Atlanta Hawks': 'ATL E03A3E C1D32F', 'Boston Celtics': 'BOS 007A33 BA9653', 'Brooklyn Nets': 'BKN 000000 FFFFFF', 'Charlotte Hornets': 'CHA 1D1160 00788C',
+  'Chicago Bulls': 'CHI CE1141 000000', 'Cleveland Cavaliers': 'CLE 860038 FDBB30', 'Dallas Mavericks': 'DAL 00538C B8C4CA', 'Denver Nuggets': 'DEN 0E2240 FEC524',
+  'Detroit Pistons': 'DET C8102E 1D42BA', 'Golden State Warriors': 'GSW 1D428A FFC72C', 'Houston Rockets': 'HOU CE1141 C4CED4', 'Indiana Pacers': 'IND 002D62 FDBB30',
+  'Los Angeles Clippers': 'LAC C8102E 1D428A', 'Los Angeles Lakers': 'LAL 552583 FDB927', 'Memphis Grizzlies': 'MEM 5D76A9 12173F', 'Miami Heat': 'MIA 98002E F9A01B',
+  'Milwaukee Bucks': 'MIL 00471B EEE1C6', 'Minnesota Timberwolves': 'MIN 0C2340 78BE20', 'New Orleans Pelicans': 'NOP 0C2340 C8102E', 'New York Knicks': 'NYK 006BB6 F58426',
+  'Oklahoma City Thunder': 'OKC 007AC1 EF3B24', 'Orlando Magic': 'ORL 0077C0 C4CED4', 'Philadelphia 76ers': 'PHI 006BB6 ED174C', 'Phoenix Suns': 'PHX 1D1160 E56020',
+  'Portland Trail Blazers': 'POR E03A3E 000000', 'Sacramento Kings': 'SAC 5A2D81 63727A', 'San Antonio Spurs': 'SAS 000000 C4CED4', 'Toronto Raptors': 'TOR CE1141 000000',
+  'Utah Jazz': 'UTA 002B5C F9A01B', 'Washington Wizards': 'WAS 002B5C E31837',
+  'Anaheim Ducks': 'ANA F47A38 B9975B', 'Boston Bruins': 'BOS FFB81C 000000', 'Buffalo Sabres': 'BUF 003087 FFB81C', 'Calgary Flames': 'CGY C8102E F1BE48',
+  'Carolina Hurricanes': 'CAR CC0000 000000', 'Chicago Blackhawks': 'CHI CF0A2C 000000', 'Colorado Avalanche': 'COL 6F263D 236192', 'Columbus Blue Jackets': 'CBJ 002654 CE1126',
+  'Dallas Stars': 'DAL 006847 8F8F8C', 'Detroit Red Wings': 'DET CE1126 FFFFFF', 'Edmonton Oilers': 'EDM 041E42 FF4C00', 'Florida Panthers': 'FLA 041E42 C8102E',
+  'Los Angeles Kings': 'LAK 111111 A2AAAD', 'Minnesota Wild': 'MIN 154734 A6192E', 'Montreal Canadiens': 'MTL AF1E2D 192168', 'Nashville Predators': 'NSH FFB81C 041E42',
+  'New Jersey Devils': 'NJD CE1126 000000', 'New York Islanders': 'NYI 00539B F47D30', 'New York Rangers': 'NYR 0038A8 CE1126', 'Ottawa Senators': 'OTT DA1A32 000000',
+  'Philadelphia Flyers': 'PHI F74902 000000', 'Pittsburgh Penguins': 'PIT 000000 FCB514', 'San Jose Sharks': 'SJS 006D75 EA7200', 'Seattle Kraken': 'SEA 001628 99D9D9',
+  'St Louis Blues': 'STL 002F87 FCB514', 'Tampa Bay Lightning': 'TBL 002868 FFFFFF', 'Toronto Maple Leafs': 'TOR 00205B FFFFFF', 'Utah Mammoth': 'UTA 010101 71AFE5',
+  'Vancouver Canucks': 'VAN 00205B 00843D', 'Vegas Golden Knights': 'VGK B4975A 333F42', 'Washington Capitals': 'WSH C8102E 041E42', 'Winnipeg Jets': 'WPG 041E42 AC162C'
+};
+const normName = n => String(n).normalize('NFD').replace(/[\u0300-\u036f.]/g, '');
+const abbr = name => (TEAMS[normName(name)] || '').split(' ')[0] || nick(name).slice(0, 3).toUpperCase();
+function badge(name) {
+  const t = TEAMS[normName(name)];
+  const [ab, bg, ring] = t ? t.split(' ') : [nick(name).slice(0, 3).toUpperCase(), '5A6478', '97A1B7'];
+  const [r, g, b] = [0, 2, 4].map(i => parseInt(bg.slice(i, i + 2), 16));
+  const ink = 0.299 * r + 0.587 * g + 0.114 * b > 150 ? '#101828' : '#FFFFFF';
+  return `<span class="badge" style="--tb:#${bg};--tr:#${ring};--tt:${ink}" aria-hidden="true">${esc(ab)}</span>`;
+}
+const leagueKey = g => (String(g.league || 'NFL').split(/[\s·]+/)[0] || 'NFL').toUpperCase();
+const spreadName = g => leagueKey(g) === 'NHL' ? 'Puck line' : 'Spread';
+const MAX_LEGS = 8;
+// spreadOdds/totalOdds price the home spread and the over; awaySpreadOdds/underOdds override the other side when the book prices it differently (NHL puck lines)
+function priceOf(g, market, side) {
+  if (market === 'ml') return side === 'home' ? g.homeML : g.awayML;
+  if (market === 'spread') return (side === 'away' ? g.awaySpreadOdds : null) ?? g.spreadOdds ?? -110;
+  return (side === 'under' ? g.underOdds : null) ?? g.totalOdds ?? -110;
+}
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const fmtKick = iso => { const d = new Date(iso); return isNaN(d) ? 'TBD' : d.toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); };
+const dayKey = iso => { const d = new Date(iso); return isNaN(d) ? 'TBD' : d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }); };
+const toLocalInput = iso => { const d = new Date(iso); if (isNaN(d)) return ''; const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
+const isLocked = g => !!(g && (g.final || g.locked || Date.now() >= Date.parse(g.startsAt)));
+const gameState = g => g.final ? 'final' : isLocked(g) ? 'locked' : 'open';
+
+function grade(b, g) {
+  if (!g || !g.final) return 'pending';
+  const a = +g.final.away, h = +g.final.home;
+  let m;
+  if (b.market === 'ml') m = b.side === 'home' ? h - a : a - h;
+  else if (b.market === 'spread') m = b.side === 'home' ? h + b.line - a : a + b.line - h;
+  else m = b.side === 'over' ? (a + h) - b.line : b.line - (a + h);
+  return m > 0 ? 'won' : m < 0 ? 'lost' : 'push';
+}
+function pickLabel(b, g, short) {
+  if (b.market === 'parlay') return `${(b.legs || []).length}-leg parlay`;
+  if (b.market === 'total') return `${b.side === 'over' ? 'Over' : 'Under'} ${b.line}`;
+  const team = g ? (b.side === 'home' ? g.home : g.away) : (b.side);
+  const t = short ? nick(team) : team;
+  return b.market === 'ml' ? `${t} ML` : `${t} ${fmtLine(b.line)}`;
+}
+const matchup = g => g ? `${nick(g.away)} @ ${nick(g.home)}` : 'Removed game';
+
+// A bet is a straight pick (one leg: the bet itself) or a parlay ({ market: 'parlay', legs: [...] }).
+// Legs on deleted games are void: a parlay plays on without them; a bet with no live legs is refunded.
+const isParlay = b => b.market === 'parlay';
+const betLegs = b => isParlay(b) ? (b.legs || []) : [b];
+const betLocked = b => betLegs(b).some(l => isLocked(S.games[l.gameId]));
+function outcome(b) {
+  let won = 1, all = 1, live = 0, pending = false, lost = false;
+  for (const l of betLegs(b)) {
+    const g = S.games[l.gameId]; if (!g) continue;
+    live++; all *= dec(l.odds);
+    const r = grade(l, g);
+    if (r === 'lost') lost = true; else if (r === 'pending') pending = true; else if (r === 'won') won *= dec(l.odds);
+  }
+  const toWin = b.stake * (all - 1);
+  if (!live) return { r: 'void', net: 0, toWin: 0 };
+  if (lost) return { r: 'lost', net: -b.stake, toWin };
+  if (pending) return { r: 'pending', net: 0, toWin };
+  return won > 1 ? { r: 'won', net: b.stake * (won - 1), toWin } : { r: 'push', net: 0, toWin };
+}
+
+// Weeks: every player gets START units per week; unbet units don't carry over.
+// Score = total net of settled picks across all weeks. Book weeks run Tue→Mon on the NFL calendar
+// (Week 1 starts Tue Sep 8, 2026), so NBA/NHL games fall into the same week as that NFL slate.
+const WEEK1 = Date.parse('2026-09-08T12:00:00Z'), WEEK_MS = 7 * 864e5;
+const weekFromDate = iso => { const t = Date.parse(iso); return isNaN(t) ? 0 : Math.floor((t - WEEK1) / WEEK_MS) + 1; };
+const weekOf = g => g ? (+g.week || +((/^w(\d+)-/.exec(g.id || '') || [])[1]) || weekFromDate(g.startsAt)) : 0;
+const betWeek = b => +b.week || weekOf(S.games[betLegs(b)[0]?.gameId]);
+function curWeek() {
+  const gs = Object.values(S.games); if (!gs.length) return 0;
+  const open = gs.filter(g => !g.final).map(weekOf);
+  return open.length ? Math.min(...open) : Math.max(...gs.map(weekOf));
+}
+function statsFor(p, week) {
+  const s = { bankroll: START, available: START, atRisk: 0, w: 0, l: 0, pu: 0, open: 0, wagered: 0, net: 0 };
+  for (const b of (p.bets || [])) {
+    if (week != null && betWeek(b) !== week) continue;
+    const o = outcome(b);
+    if (o.r === 'void') continue;
+    if (o.r === 'pending') { s.open++; s.atRisk += b.stake; continue; }
+    s.wagered += b.stake; s.net += o.net;
+    if (o.r === 'won') s.w++; else if (o.r === 'lost') s.l++; else s.pu++;
+  }
+  s.bankroll = START + s.net;
+  s.available = s.bankroll - s.atRisk;
+  s.roi = s.wagered ? s.net / s.wagered : 0;
+  return s;
+}
+const myPlayer = () => S.me ? S.players[S.me] : null;
+
+function toast(msg) {
+  const t = $('toast'); t.textContent = msg; t.hidden = false;
+  clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, 2600);
+}
+function isTyping() {
+  const a = document.activeElement;
+  return a && a.matches && a.matches('input, select') && $('view').contains(a);
+}
+
+// ---------- render ----------
+function render() {
+  if (isTyping()) { S.dirty = true; renderWallet(); renderSlip(); return; }
+  S.dirty = false;
+  renderTabs(); renderWallet(); renderView(); renderSlip();
+}
+document.addEventListener('focusout', () => setTimeout(() => { if (S.dirty && !isTyping()) render(); }, 0));
+
+function renderTabs() {
+  $('tabs').innerHTML = TABS.filter(([k]) => k !== 'book' || S.isOwner)
+    .map(([k, l]) => `<a href="#${k}" ${S.tab === k ? 'aria-current="page"' : ''}>${l}</a>`).join('');
+}
+function renderWallet() {
+  const p = myPlayer();
+  const out = S.me ? '<button type="button" class="pill link" data-signout>Sign out</button>' : '';
+  if (!S.me) { $('wallet').innerHTML = S.ready && !S.offline ? '<button type="button" class="btn accent small" data-signin>Sign in with Google</button>' : ''; return; }
+  if (!p) { $('wallet').innerHTML = `<span class="pill"><span>Not in yet</span></span>${out}`; return; }
+  const wk = curWeek(), s = statsFor(p), ws = statsFor(p, wk);
+  $('wallet').innerHTML = `
+    <a class="pill name" href="#picks" data-editname title="Change your display name"><span>${esc(p.handle)}</span><span aria-hidden="true">✎</span></a>
+    <span class="pill"><span>Score</span><strong>${fmtSigned(s.net)}</strong></span>
+    <span class="pill"><span>Wk ${wk} left</span><strong>${fmtU(ws.available)}</strong></span>${out}`;
+}
+
+function renderView() {
+  const v = $('view');
+  if (!S.ready) { v.innerHTML = `<div class="empty-state"><h2>Opening the book</h2><p>Loading games and standings…</p></div>`; return; }
+  if (S.offline) { v.innerHTML = `<div class="empty-state"><h2>The book isn’t connected</h2><p>This copy of Paper Book has no database set up. The commissioner needs to fill in <code>config.js</code> with the Supabase project URL and key.</p></div>`; return; }
+  if (S.tab === 'picks') v.innerHTML = viewPicks();
+  else if (S.tab === 'standings') v.innerHTML = viewStandings();
+  else if (S.tab === 'book' && S.isOwner) v.innerHTML = viewBook();
+  else v.innerHTML = viewBoard();
+}
+
+function joinBlock() {
+  if (!S.me) return `<div class="notice join"><p><strong>You’re watching.</strong> Sign in with Google to grab a seat and get ${fmtU(START)} units of fake money every week.</p><button type="button" class="btn accent" data-signin>Sign in with Google</button></div>`;
+  if (myPlayer()) return '';
+  return `<div class="notice join">
+    <p><strong>Grab a seat.</strong> Pick a display name and you get ${fmtU(START)} units of fake money every week. Your score is what you win minus what you lose, so units you don’t bet are wasted.</p>
+    <form class="row" data-act="join">
+      <input type="text" id="handle-input" maxlength="20" placeholder="Display name" value="${esc(S.handleDraft)}" aria-label="Display name" required>
+      <button class="btn accent" type="submit">Join the book</button>
+    </form>
+  </div>`;
+}
+
+function viewBoard() {
+  const all = Object.values(S.games).sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt));
+  const leagues = [...new Set(all.map(leagueKey))].sort((a, b) => (LEAGUES.indexOf(a) + 1 || 99) - (LEAGUES.indexOf(b) + 1 || 99));
+  if (S.league !== 'all' && !leagues.includes(S.league)) S.league = 'all';
+  const games = S.league === 'all' ? all : all.filter(g => leagueKey(g) === S.league);
+  const upcoming = games.filter(g => !g.final), finals = games.filter(g => g.final).reverse();
+  let html = joinBlock();
+  const wk = curWeek();
+  html += `<div><h1>${wk ? `Week ${wk} board` : 'The board'}</h1><p class="sub">Lines lock at game time. You get ${fmtU(START)} units a week to spread across that week’s games, and anything you don’t bet is gone when the week ends. Tap two or more lines to build a parlay, from different games or the same one.</p></div>`;
+  if (leagues.length > 1) html += `<div class="filters" role="group" aria-label="League">${['all', ...leagues].map(k => `<button type="button" class="fchip" data-league="${esc(k)}" aria-pressed="${S.league === k}">${k === 'all' ? 'All' : esc(k)}</button>`).join('')}</div>`;
+  if (!all.length) {
+    html += `<div class="empty-state"><h2>No games posted yet</h2><p>${S.isOwner ? 'Open <a href="#book">Run the book</a> to post games and lines.' : 'The commissioner hasn’t posted lines yet. Check back soon.'}</p></div>`;
+    return html;
+  }
+  const groups = {};
+  upcoming.forEach(g => { (groups[dayKey(g.startsAt)] ||= []).push(g); });
+  for (const [day, gs] of Object.entries(groups)) {
+    html += `<section class="day"><div class="eyebrow">${esc(day)}</div>${gs.map(gameCard).join('')}</section>`;
+  }
+  if (finals.length) html += `<section class="day"><div class="eyebrow">Final</div>${finals.map(gameCard).join('')}</section>`;
+  return html;
+}
+
+function gameCard(g) {
+  const st = gameState(g), locked = st !== 'open';
+  const mine = (myPlayer()?.bets || []).flatMap(betLegs).filter(l => l.gameId === g.id);
+  const btn = (market, side, line, odds) => {
+    const sel = S.slip.some(s => s.gameId === g.id && s.market === market && s.side === side);
+    const has = mine.some(b => b.market === market && b.side === side);
+    const top = market === 'ml' ? fmtOdds(odds) : market === 'total' ? `${side === 'over' ? 'O' : 'U'} ${line}` : fmtLine(line);
+    const bottom = market === 'ml' ? 'ML' : fmtOdds(odds);
+    return `<button class="odd${has ? ' mine' : ''}" data-pick="${g.id}|${market}|${side}" aria-pressed="${sel}" ${locked ? 'disabled' : ''} aria-label="${esc(pickLabel({market, side, line}, g))} at ${fmtOdds(odds)}"><span class="ln">${top}</span><span class="od">${bottom}</span></button>`;
+  };
+  const winner = g.final ? (+g.final.home > +g.final.away ? 'home' : +g.final.away > +g.final.home ? 'away' : null) : null;
+  const teamCell = (side) => `<div class="team ${winner === side ? 'won' : ''}">${badge(g[side])}<span class="ha">${side === 'home' ? 'Home' : 'Away'}</span><div class="who"><span class="nm">${esc(nick(g[side]))}</span><span class="city">${esc(city(g[side]))}</span></div>${g.final ? `<span class="score">${esc(g.final[side])}</span>` : ''}</div>`;
+  // who's on it
+  const all = [];
+  for (const p of Object.values(S.players)) for (const b of (p.bets || [])) for (const l of betLegs(b)) if (l.gameId === g.id) all.push([p, b, l]);
+  let foot = '';
+  if (all.length) {
+    if (locked) foot = `<div class="game-foot">${all.map(([p, b, l]) => {
+      const r = grade(l, g);
+      return `<span><b>${esc(p.handle)}</b> ${esc(pickLabel(l, g, true))} <span class="num">${isParlay(b) ? '(parlay leg)' : `(${fmtU(b.stake)})`}</span>${r !== 'pending' ? ` <span class="chip ${r}">${r}</span>` : ''}</span>`;
+    }).join('')}</div>`;
+    else foot = `<div class="game-foot"><span>${all.length} pick${all.length > 1 ? 's' : ''} in. Who took what shows at kickoff.</span></div>`;
+  }
+  return `<article class="game">
+    <div class="game-meta"><span>${esc(g.league || 'NFL')} · ${fmtKick(g.startsAt)}</span><span class="state ${st}">${st}</span></div>
+    <div class="mkt">
+      <span></span><span class="hd">${spreadName(g)}</span><span class="hd">Total</span><span class="hd">Money</span>
+      ${teamCell('away')}${btn('spread', 'away', -g.homeSpread, priceOf(g, 'spread', 'away'))}${btn('total', 'over', g.total, priceOf(g, 'total', 'over'))}${btn('ml', 'away', null, g.awayML)}
+      ${teamCell('home')}${btn('spread', 'home', g.homeSpread, priceOf(g, 'spread', 'home'))}${btn('total', 'under', g.total, priceOf(g, 'total', 'under'))}${btn('ml', 'home', null, g.homeML)}
+    </div>${moveCharts(g)}${foot}
+  </article>`;
+}
+
+function viewPicks() {
+  const p = myPlayer();
+  if (!p) return joinBlock() + `<div class="empty-state"><h2>No picks yet</h2><p>Join the book, then tap any line on the board to build a ticket.</p></div>`;
+  const wk = curWeek(), s = statsFor(p), ws = statsFor(p, wk);
+  const bets = [...(p.bets || [])].sort((a, b) => (b.placedAt || '').localeCompare(a.placedAt || ''));
+  const open = bets.filter(b => outcome(b).r === 'pending');
+  const done = bets.filter(b => outcome(b).r !== 'pending');
+  const ticket = b => {
+    const o = outcome(b), r = o.r;
+    const canCancel = r === 'pending' && !betLocked(b);
+    const result = r === 'won' ? `<span class="up">+${fmtU(o.net)}</span>` : r === 'lost' ? `<span class="down">−${fmtU(b.stake)}</span>` : r === 'push' || r === 'void' ? 'Refund' : `to win ${fmtU(o.toWin)}`;
+    let info;
+    if (isParlay(b)) info = `<div class="t1">${esc(pickLabel(b))} <span class="num muted">${fmtOdds(b.odds)}</span></div>
+      <ul class="legs">${b.legs.map(l => { const g = S.games[l.gameId], lr = g ? grade(l, g) : 'void';
+        return `<li><span>${esc(pickLabel(l, g, true))} <span class="num muted">${fmtOdds(l.odds)}</span> · ${esc(matchup(g))}</span>${lr !== 'pending' ? `<span class="chip ${lr}">${lr}</span>` : ''}</li>`; }).join('')}</ul>`;
+    else { const g = S.games[b.gameId]; info = `<div class="t1">${esc(pickLabel(b, g))} <span class="num muted">${fmtOdds(b.odds)}</span></div>
+      <div class="t2">${esc(matchup(g))}${g ? ' · ' + fmtKick(g.startsAt) : ''}</div>`; }
+    return `<div class="ticket">
+      <div>${info}</div>
+      <div class="amt"><span class="chip ${r}">${r}</span><div>${fmtU(b.stake)} · ${result}</div>
+      ${canCancel ? `<button class="btn ghost small" data-cancel="${b.id}">Cancel pick</button>` : ''}</div>
+    </div>`;
+  };
+  return `<div><h1>${esc(p.handle)}</h1><p class="sub">${fmtU(START)} units a week. Score is everything you’ve won minus everything you’ve lost.</p></div>
+    <form class="namebox" data-act="rename" id="namebox">
+      <label for="rename-input">Display name <span class="muted">· what everyone sees on the standings</span></label>
+      <div class="row"><input type="text" id="rename-input" maxlength="20" value="${esc(S.renameDraft ?? p.handle)}" autocomplete="nickname"><button class="btn small" type="submit">Save name</button></div>
+    </form>
+    <div class="stats">
+      <div class="stat"><div class="v ${s.net > 0 ? 'up' : s.net < 0 ? 'down' : ''}">${fmtSigned(s.net)}</div><div class="l">Score</div></div>
+      <div class="stat"><div class="v">${fmtU(ws.available)}</div><div class="l">Week ${wk} left to bet</div></div>
+      <div class="stat"><div class="v">${s.w}-${s.l}${s.pu ? '-' + s.pu : ''}</div><div class="l">Record</div></div>
+      <div class="stat"><div class="v">${fmtU(s.atRisk)}</div><div class="l">At risk</div></div>
+    </div>
+    <section class="card"><h2>Open tickets</h2>${open.length ? open.map(ticket).join('') : '<p class="muted" style="margin:0">Nothing open. Tap a line on the board.</p>'}</section>
+    <section class="card"><h2>Settled</h2>${done.length ? done.map(ticket).join('') : '<p class="muted" style="margin:0">No settled picks yet.</p>'}</section>`;
+}
+
+function viewStandings() {
+  const wk = curWeek();
+  const rows = Object.values(S.players).map(p => ({ p, s: statsFor(p), ws: statsFor(p, wk) })).sort((a, b) => b.s.net - a.s.net || b.s.w - a.s.w);
+  const cls = n => n > 0 ? 'up' : n < 0 ? 'down' : '';
+  let html = joinBlock() + `<div><h1>Standings</h1><p class="sub">Score is total won minus total lost on settled picks. Everyone gets ${fmtU(START)} units each week, and unbet units don’t carry over.</p></div>`;
+  if (!rows.length) return html + `<div class="empty-state"><h2>Nobody's in yet</h2><p>The first person to join takes the top spot.</p></div>`;
+  html += `<section class="card"><div class="tbl-wrap"><table>
+    <thead><tr><th>#</th><th>Player</th><th class="r">Score</th><th class="r">Wk ${wk}</th><th class="r">Wk ${wk} left</th><th class="r">W-L-P</th><th class="r">ROI</th><th class="r">Open</th></tr></thead><tbody>
+    ${rows.map(({ p, s, ws }, i) => `<tr class="${p.id === S.me ? 'me' : ''}"><td class="rank">${i + 1}</td><td class="handle">${esc(p.handle)}</td>
+      <td class="r ${cls(s.net)}">${fmtSigned(s.net)}</td><td class="r ${cls(ws.net)}">${fmtSigned(ws.net)}</td><td class="r">${fmtU(ws.available)}</td>
+      <td class="r">${s.w}-${s.l}-${s.pu}</td><td class="r">${s.wagered ? (s.roi * 100).toFixed(1) + '%' : '—'}</td><td class="r">${s.open}</td></tr>`).join('')}
+    </tbody></table></div></section>`;
+  // feed of revealed action
+  const feed = [];
+  // a parlay shows once its first leg kicks off; legs on games not yet started stay hidden
+  for (const p of Object.values(S.players)) for (const b of (p.bets || [])) { const shown = betLegs(b).filter(l => isLocked(S.games[l.gameId])); if (shown.length) feed.push([p, b, shown]); }
+  feed.sort((a, b) => (b[1].placedAt || '').localeCompare(a[1].placedAt || ''));
+  html += `<section class="card"><h2>Action</h2>${feed.length ? `<ul class="feed">${feed.slice(0, 20).map(([p, b, shown]) => {
+    const r = outcome(b).r;
+    const what = isParlay(b)
+      ? `a ${esc(pickLabel(b))} <span class="num muted">${fmtOdds(b.odds)}</span>: ${shown.map(l => esc(pickLabel(l, S.games[l.gameId], true))).join(', ')}${(n => n ? ` + ${n} more` : '')(b.legs.filter(l => S.games[l.gameId] && !isLocked(S.games[l.gameId])).length)}`
+      : `${esc(pickLabel(b, shown[0] && S.games[b.gameId], true))} <span class="num muted">${fmtOdds(b.odds)}</span> in ${esc(matchup(S.games[b.gameId]))}`;
+    return `<li><span><b>${esc(p.handle)}</b> took ${what}</span><span class="num">${fmtU(b.stake)} <span class="chip ${r}">${r}</span></span></li>`;
+  }).join('')}</ul>` : '<p class="muted" style="margin:0">Picks show up here once their game kicks off.</p>'}</section>`;
+  return html;
+}
+
+// ---------- line moves ----------
+// Small step charts of how a game's lines moved (from line_history). A metric gets a chart only once it has
+// had 2+ different values. Spread and moneyline both plot "home team more favored" as up (spread is negated;
+// moneyline uses implied win chance, so a move across even money isn't a jump); total plots higher as up.
+const impliedProb = o => o < 0 ? -o / (-o + 100) : 100 / (o + 100);
+function moveCharts(g) {
+  const h = S.history[g.id]; if (!h || h.length < 2) return '';
+  const home = abbr(g.home), end = Math.min(Date.now(), Date.parse(g.startsAt));
+  const series = get => {
+    const pts = [];
+    for (const r of h) { const v = get(r); if (v == null || isNaN(v)) continue; if (!pts.length || pts[pts.length - 1].v !== v) pts.push({ t: Date.parse(r.at), v }); }
+    return pts;
+  };
+  // moneyline: chart the home side, or the away side if only that one moved; up = that team more favored
+  const homeML = series(r => r.homeML), awayML = series(r => r.awayML), mlAway = homeML.length < 2 && awayML.length >= 2;
+  const metrics = [
+    [`${spreadName(g)} · ${home}`, series(r => r.homeSpread), fmtLine, v => -v],
+    ['Total', series(r => r.total), v => String(v), v => v],
+    [`Money · ${mlAway ? abbr(g.away) : home}`, mlAway ? awayML : homeML, fmtOdds, impliedProb],
+  ];
+  const charts = metrics.filter(([, pts]) => pts.length >= 2).map(([name, pts, fmt, scale]) => stepChart(name, pts, fmt, scale, end));
+  return charts.length ? `<div class="moves"><span class="eyebrow">Line moves</span><div class="moves-row">${charts.join('')}</div></div>` : '';
+}
+function stepChart(name, pts, fmt, scale, end) {
+  const W = 112, H = 30, P = 4;
+  const t0 = pts[0].t, t1 = Math.max(end, pts[pts.length - 1].t + 1);
+  const ys = pts.map(p => scale(p.v)), lo = Math.min(...ys), hi = Math.max(...ys);
+  const x = t => (P + (t - t0) / (t1 - t0) * (W - 2 * P)).toFixed(1);
+  const y = v => (hi === lo ? H / 2 : P + (hi - scale(v)) / (hi - lo) * (H - 2 * P)).toFixed(1);
+  let d = `M${x(pts[0].t)},${y(pts[0].v)}`;
+  for (let i = 1; i < pts.length; i++) d += `H${x(pts[i].t)}V${y(pts[i].v)}`;
+  d += `H${x(t1)}`;
+  const when = t => new Date(t).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const dots = pts.map((p, i) => `<g><title>${esc(when(p.t))}: ${esc(fmt(p.v))}</title><circle cx="${x(p.t)}" cy="${y(p.v)}" r="8" fill="transparent"/><circle cx="${x(p.t)}" cy="${y(p.v)}" r="${i === pts.length - 1 ? 3.5 : 2.5}" class="${i === pts.length - 1 ? 'now' : 'pt'}"/></g>`).join('');
+  const a = fmt(pts[0].v), b = fmt(pts[pts.length - 1].v), n = pts.length - 1;
+  return `<figure class="move" aria-label="${esc(`${name}: opened ${a}, now ${b}, ${n} move${n > 1 ? 's' : ''}`)}">
+    <figcaption><span>${esc(name)}</span><span class="num">${esc(a)} → <b>${esc(b)}</b></span></figcaption>
+    <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true"><path d="${d}" class="ln"/>${dots}</svg>
+  </figure>`;
+}
+
+// ---------- commissioner ----------
+const BLANK = { league: 'NFL', away: '', home: '', startsAt: '', awayML: '', homeML: '', homeSpread: '', total: '', spreadOdds: -110, awaySpreadOdds: '', totalOdds: -110, underOdds: '' };
+function draftFor(id) {
+  if (!S.drafts[id]) {
+    const g = S.games[id];
+    S.drafts[id] = g ? { league: g.league, week: weekOf(g) || '', away: g.away, home: g.home, startsAt: toLocalInput(g.startsAt), awayML: g.awayML, homeML: g.homeML, homeSpread: g.homeSpread, total: g.total, spreadOdds: g.spreadOdds ?? -110, awaySpreadOdds: g.awaySpreadOdds ?? '', totalOdds: g.totalOdds ?? -110, underOdds: g.underOdds ?? '' } : { ...BLANK, week: '' };
+  }
+  return S.drafts[id];
+}
+function gameForm(id, submitLabel) {
+  const d = draftFor(id);
+  const f = (k, label, type = 'text', extra = '') => `<label>${label}<input type="${type}" id="f-${id}-${k}" data-draft="${id}" data-key="${k}" value="${esc(d[k])}" ${extra}></label>`;
+  return `<form class="form" data-act="savegame" data-id="${id}">
+    ${f('away', 'Away team', 'text', 'required placeholder="Jacksonville Jaguars"')}
+    ${f('home', 'Home team', 'text', 'required placeholder="Baltimore Ravens"')}
+    ${f('startsAt', 'Start (your time)', 'datetime-local', 'required')}
+    ${f('week', 'Week (blank = from date)', 'number', `min="1" step="1" placeholder="${d.startsAt ? weekFromDate(new Date(d.startsAt).toISOString()) : 'auto'}"`)}
+    ${f('league', 'League', 'text', `list="league-list" placeholder="NFL, NBA or NHL"`)}
+    <datalist id="league-list">${LEAGUES.map(l => `<option value="${l}">`).join('')}</datalist>
+    ${f('awayML', 'Away moneyline', 'number', 'required step="1" placeholder="+170"')}
+    ${f('homeML', 'Home moneyline', 'number', 'required step="1" placeholder="-205"')}
+    ${f('homeSpread', 'Home spread', 'number', 'required step="0.5" placeholder="-4.5"')}
+    ${f('total', 'Total', 'number', 'required step="0.5" placeholder="49.5"')}
+    ${f('spreadOdds', 'Home spread price', 'number', 'step="1"')}
+    ${f('awaySpreadOdds', 'Away spread price', 'number', 'step="1" placeholder="same"')}
+    ${f('totalOdds', 'Over price', 'number', 'step="1"')}
+    ${f('underOdds', 'Under price', 'number', 'step="1" placeholder="same"')}
+    <div class="row" style="align-self:end"><button class="btn accent" type="submit">${submitLabel}</button>${id !== 'new' ? `<button class="btn ghost" type="button" data-closeedit="${id}">Close</button>` : ''}</div>
+  </form>`;
+}
+function viewBook() {
+  const games = Object.values(S.games).sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt));
+  return `<div><h1>Run the book</h1><p class="sub">Only you see this tab. Post games, adjust lines before kickoff, and enter final scores to settle every pick on that game.</p></div>
+  <section class="card"><h2>Post a game</h2>${gameForm('new', 'Post game')}</section>
+  <section class="card"><h2>Games on the board</h2>${games.length ? games.map(g => {
+    const st = gameState(g), sd = S.settle[g.id] || { away: g.final?.away ?? '', home: g.final?.home ?? '' };
+    const nPicks = Object.values(S.players).reduce((n, p) => n + (p.bets || []).flatMap(betLegs).filter(l => l.gameId === g.id).length, 0);
+    return `<div class="book-game">
+      <div class="ttl"><div><strong>${esc(g.away)} @ ${esc(g.home)}</strong> <span class="muted">· Wk ${weekOf(g) || '?'} · ${fmtKick(g.startsAt)} · ${nPicks} pick${nPicks === 1 ? '' : 's'}</span></div><span class="state ${st}">${st}</span></div>
+      <form class="row" data-act="settle" data-id="${g.id}">
+        <label class="muted" for="s-${g.id}-away">${esc(nick(g.away))}</label><input type="number" id="s-${g.id}-away" data-settle="${g.id}" data-key="away" value="${esc(sd.away)}" style="width:5.5em" min="0" required>
+        <label class="muted" for="s-${g.id}-home">${esc(nick(g.home))}</label><input type="number" id="s-${g.id}-home" data-settle="${g.id}" data-key="home" value="${esc(sd.home)}" style="width:5.5em" min="0" required>
+        <button class="btn small" type="submit">${g.final ? 'Update final' : 'Settle'}</button>
+        ${g.final ? `<button class="btn ghost small" type="button" data-unsettle="${g.id}">Reopen</button>` : `<button class="btn ghost small" type="button" data-lock="${g.id}">${g.locked ? 'Unlock' : 'Lock now'}</button>`}
+        <button class="btn ghost small" type="button" data-edit="${g.id}">Edit lines</button>
+        ${S.confirmDel === g.id ? `<button class="btn danger small" type="button" data-del="${g.id}">Delete game and its picks?</button><button class="btn ghost small" type="button" data-nodel>Keep</button>` : `<button class="btn ghost small" type="button" data-askdel="${g.id}">Delete</button>`}
+      </form>
+      ${S.drafts[g.id] && S.drafts[g.id]._open ? gameForm(g.id, 'Save lines') : ''}
+    </div>`;
+  }).join('') : '<p class="muted" style="margin:0">No games yet. Post one above.</p>'}</section>`;
+}
+
+// ---------- slip ----------
+// S.slip holds up to MAX_LEGS picks, one per market per game, all in the same week. One pick is a straight bet;
+// two or more go in as a parlay (default) or as equal-stake singles.
+function slipLegs() {
+  return S.slip.map(({ gameId, market, side }) => {
+    const g = S.games[gameId]; if (!g) return null;
+    const line = market === 'ml' ? null : market === 'spread' ? (side === 'home' ? g.homeSpread : -g.homeSpread) : g.total;
+    const odds = priceOf(g, market, side);
+    return { g, gameId, market, side, line, odds };
+  }).filter(Boolean);
+}
+// Same-game legs that can't both win: a moneyline on one team plus the other team's spread when that team
+// is laying points or PK (if the favorite covers, it won, so the other moneyline lost). Only blocks parlays;
+// the same picks can still go in as singles.
+function clash(legs) {
+  for (let i = 0; i < legs.length; i++) for (let j = i + 1; j < legs.length; j++) {
+    const a = legs[i], b = legs[j];
+    if (a.gameId !== b.gameId) continue;
+    const ml = a.market === 'ml' ? a : b.market === 'ml' ? b : null, sp = a.market === 'spread' ? a : b.market === 'spread' ? b : null;
+    if (ml && sp && ml.side !== sp.side && sp.line <= 0) return [i, j];
+  }
+  return null;
+}
+function slipCalc() {
+  const legs = slipLegs(), n = legs.length, p = myPlayer();
+  const parlay = n > 1 && S.mode === 'parlay', perPick = n > 1 && !parlay;
+  const stake = parseFloat(S.stake), week = n ? weekOf(legs[0].g) : curWeek();
+  const s = p ? statsFor(p, week) : null;
+  const d = legs.reduce((x, l) => x * dec(l.odds), 1);
+  const cost = stake > 0 ? (perPick ? stake * n : stake) : 0;
+  const win = !(stake > 0) ? 0 : perPick ? legs.reduce((x, l) => x + profit(stake, l.odds), 0) : stake * (d - 1);
+  const locked = legs.some(l => isLocked(l.g));
+  const over = s && cost > s.available + 1e-9, clashAt = parlay ? clash(legs) : null;
+  return { legs, n, parlay, perPick, stake, week, s, cost, win, odds: n ? toAmerican(d) : 0, locked, over, clashAt, ok: stake > 0 && !!s && !over && !locked && !clashAt };
+}
+function renderSlip() {
+  const el = $('slip'), p = myPlayer(), c = slipCalc();
+  el.classList.toggle('idle', !c.n);
+  el.classList.toggle('collapsed', !S.sheetOpen);
+  if (!S.ready || S.offline) { el.innerHTML = slipHead(false) + `<div class="slip-body"><p class="empty">Your ticket shows up here.</p></div>`; return; }
+  if (!c.n) {
+    const s = p ? statsFor(p, curWeek()) : null;
+    el.innerHTML = slipHead(false) + `<div class="slip-body"><p class="empty">Tap any line on the board to start a ticket. Add more lines to make it a parlay.</p>${s ? `<dl class="kv"><dt>Left this week</dt><dd>${fmtU(s.available)}</dd><dt>At risk</dt><dd>${fmtU(s.atRisk)}</dd></dl>` : ''}</div>`;
+    return;
+  }
+  const legRow = (l, i) => `<div class="leg${c.clashAt?.includes(i) ? ' clash' : ''}"><div class="pick-line"><span class="eyebrow">${l.market === 'ml' ? 'Moneyline' : l.market === 'spread' ? spreadName(l.g) : 'Total'} · ${esc(leagueKey(l.g))}</span><span class="what">${esc(pickLabel(l, l.g))} <span class="num od">${fmtOdds(l.odds)}</span></span><span class="ctx">${esc(l.g.away)} @ ${esc(l.g.home)} · ${fmtKick(l.g.startsAt)}</span></div>${c.n > 1 ? `<button type="button" class="x-leg" data-rmleg="${i}" aria-label="Remove ${esc(pickLabel(l, l.g))}">×</button>` : ''}</div>`;
+  let body = '';
+  if (c.n > 1) body += `<div class="seg" role="group" aria-label="Ticket type"><button type="button" data-mode="parlay" aria-pressed="${c.parlay}">Parlay <span class="num">${fmtOdds(c.odds)}</span></button><button type="button" data-mode="singles" aria-pressed="${c.perPick}">${c.n} singles</button></div>`;
+  body += `<div class="legs-box">${c.legs.map(legRow).join('')}</div>`;
+  if (c.clashAt) { const [x, y] = c.clashAt.map(i => pickLabel(c.legs[i], c.legs[i].g, true)); body += `<p class="err">${esc(x)} and ${esc(y)} can’t both win, so they can’t go on one parlay. Remove one, or switch to singles.</p>`; }
+  if (c.n === 1) body += `<p class="hint">Tap another line (any game, or a different bet on this one) to make it a parlay.</p>`;
+  if (c.locked) body += `<p class="err">A game on this ticket has started. Remove it to keep going.</p>`;
+  else if (!p) body += S.me ? `<p class="empty">Join the book first. Enter a handle at the top of the board.</p>` : `<button type="button" class="btn accent" data-signin>Sign in with Google to bet</button>`;
+  else {
+    body += `<form data-act="place" class="slip-form" style="display:grid;gap:10px">
+      <div class="stake"><input type="number" id="stake-input" min="1" step="1" inputmode="decimal" placeholder="${c.perPick ? 'Stake per pick' : 'Stake'}" value="${esc(S.stake)}" aria-label="${c.perPick ? 'Stake per pick in units' : 'Stake in units'}"><span class="muted">${c.perPick ? 'units each' : 'units'}</span></div>
+      <div class="quick">${[25, 50, 100].map(n => `<button type="button" class="btn ghost small" data-quick="${n}">${n}</button>`).join('')}<button type="button" class="btn ghost small" data-quick="max">Max</button></div>
+      <dl class="kv">${c.perPick ? `<dt>Total stake</dt><dd id="tocost">${fmtU(c.cost)}</dd>` : ''}<dt>${c.perPick ? 'To win if all hit' : 'To win'}</dt><dd class="big" id="towin">${fmtU(c.win)}</dd><dt>Total return</dt><dd id="toret">${fmtU(c.cost ? c.cost + c.win : 0)}</dd><dt>Left in week ${c.week}</dt><dd>${fmtU(c.s.available)}</dd></dl>
+      <p class="err" id="slip-err">${esc(S.err) || (c.over ? 'That’s more than you have left this week.' : '')}</p>
+      <button class="btn accent" type="submit" id="place-btn" ${c.ok && !S.busy ? '' : 'disabled'}>${c.parlay ? `Place ${c.n}-leg parlay` : c.n > 1 ? `Place ${c.n} picks` : 'Place pick'}</button>
+    </form>`;
+  }
+  // keep focus in stake input across re-render
+  const focused = document.activeElement && document.activeElement.id === 'stake-input';
+  el.innerHTML = slipHead(true, c) + `<div class="slip-body${c.n > 1 ? ' multi' : ''}">${body}</div>`;
+  if (focused) { const i = $('stake-input'); if (i) { i.focus(); const v = i.value; i.value = ''; i.value = v; } }
+}
+function slipHead(clear, c) {
+  const title = !c || c.n < 2 ? 'Bet slip' : c.parlay ? `${c.n}-leg parlay` : `${c.n} singles`;
+  const sum = c && c.n ? (c.parlay ? fmtOdds(c.odds) : c.n === 1 ? fmtOdds(c.legs[0].odds) : `${c.n} picks`) : '';
+  // on phones the slip is a bottom sheet: collapsed to this bar so the board stays tappable while building a parlay
+  return `<div class="slip-head"><h2>${title}${sum ? `<span class="sum">${sum}</span>` : ''}</h2>${clear ? `<div class="acts"><button class="x" data-clear>Clear</button><button class="sheet" data-sheet aria-expanded="${S.sheetOpen}">${S.sheetOpen ? 'Hide' : 'Review'}</button></div>` : ''}</div>`;
+}
+function updateSlipNumbers() {
+  const c = slipCalc(); if (!c.n || !c.s) return;
+  const w = $('towin'), r = $('toret'), k = $('tocost'), e = $('slip-err'), b = $('place-btn');
+  if (w) w.textContent = fmtU(c.win);
+  if (r) r.textContent = fmtU(c.cost ? c.cost + c.win : 0);
+  if (k) k.textContent = fmtU(c.cost);
+  if (e) e.textContent = c.over ? 'That’s more than you have left this week.' : '';
+  if (b) b.disabled = !c.ok || S.busy;
+}
+
+// ---------- data (Supabase) ----------
+// Tables use snake_case columns; the page keeps the camelCase field names it always had.
+const CFG = window.PAPERBOOK || {};
+const sb = window.supabase && CFG.supabaseUrl && !/YOUR-/.test(CFG.supabaseUrl + CFG.supabaseKey) ? window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseKey) : null;
+const GAME_COLS = { startsAt: 'starts_at', awayML: 'away_ml', homeML: 'home_ml', homeSpread: 'home_spread', spreadOdds: 'spread_odds', awaySpreadOdds: 'away_spread_odds', totalOdds: 'total_odds', underOdds: 'under_odds', updatedAt: 'updated_at' };
+const PLAYER_COLS = { joinedAt: 'joined_at' };
+const toRow = (o, cols) => Object.fromEntries(Object.entries(o).map(([k, v]) => [cols[k] || k, v]));
+const fromRow = (r, cols) => { const back = Object.fromEntries(Object.entries(cols).map(([k, v]) => [v, k])); return Object.fromEntries(Object.entries(r).map(([k, v]) => [back[k] || k, v])); };
+const fromGame = r => { const g = fromRow(r, GAME_COLS); g.homeSpread = +g.homeSpread; g.total = +g.total; return g; };
+const fromPlayer = r => fromRow(r, PLAYER_COLS);
+const fromHist = r => ({ at: r.at, awayML: r.away_ml, homeML: r.home_ml, homeSpread: r.home_spread == null ? null : +r.home_spread, total: r.total == null ? null : +r.total });
+// run a write and fold the returned row into local state, so the page updates without waiting for realtime
+async function write(q, table) {
+  const { data, error } = await q.select();
+  if (error) throw error;
+  if (!data || !data.length) throw { code: 'denied' };
+  for (const r of data) { if (table === 'games') S.games[r.id] = fromGame(r); else S.players[r.id] = fromPlayer(r); }
+  render();
+}
+const api = {
+  join: body => write(sb.from('players').insert(toRow({ id: S.me, ...body }, PLAYER_COLS)), 'players'),
+  updateMe: body => write(sb.from('players').update(toRow(body, PLAYER_COLS)).eq('id', S.me), 'players'),
+  addGame: body => write(sb.from('games').insert(toRow(body, GAME_COLS)), 'games'),
+  updateGame: (id, body) => write(sb.from('games').update(toRow(body, GAME_COLS)).eq('id', id), 'games'),
+  async deleteGame(id) { const { data, error } = await sb.from('games').delete().eq('id', id).select('id'); if (error) throw error; if (!data.length) throw { code: 'denied' }; delete S.games[id]; render(); }
+};
+async function pageAll(make) {
+  const out = [];
+  for (let i = 0; ; i += 1000) { const { data, error } = await make().range(i, i + 999); if (error) throw error; out.push(...data); if (data.length < 1000) return out; }
+}
+// Load every player, games from the last three weeks on, plus any older game someone has a ticket on.
+async function loadAll() {
+  const players = await pageAll(() => sb.from('players').select('*'));
+  const since = new Date(Date.now() - 21 * 864e5).toISOString();
+  const games = await pageAll(() => sb.from('games').select('*').gte('starts_at', since).order('starts_at'));
+  const m = Object.fromEntries(games.map(r => [r.id, fromGame(r)]));
+  const need = [...new Set(players.flatMap(p => (p.bets || []).flatMap(betLegs).map(l => l.gameId)))].filter(id => id && !m[id]);
+  for (let i = 0; i < need.length; i += 100) {
+    const { data, error } = await sb.from('games').select('*').in('id', need.slice(i, i + 100)); if (error) throw error;
+    data.forEach(r => { m[r.id] = fromGame(r); });
+  }
+  // line history (for the line-move charts) for games from the same window
+  const hist = {}, ids = games.map(r => r.id);
+  for (let i = 0; i < ids.length; i += 100) {
+    const chunk = ids.slice(i, i + 100);
+    for (const r of await pageAll(() => sb.from('line_history').select('*').in('game_id', chunk).order('at'))) (hist[r.game_id] ||= []).push(fromHist(r));
+  }
+  S.games = m; S.players = Object.fromEntries(players.map(r => [r.id, fromPlayer(r)])); S.history = hist;
+}
+function subscribe() {
+  sb.channel('book')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'games' }, ev => {
+      if (ev.eventType === 'DELETE') delete S.games[ev.old.id]; else S.games[ev.new.id] = fromGame(ev.new); render();
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'players' }, ev => {
+      if (ev.eventType === 'DELETE') delete S.players[ev.old.id]; else S.players[ev.new.id] = fromPlayer(ev.new); render();
+    })
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'line_history' }, ev => {
+      (S.history[ev.new.game_id] ||= []).push(fromHist(ev.new)); render();
+    })
+    .subscribe();
+}
+async function applySession(session) {
+  const u = session?.user;
+  S.me = u?.id || null; S.isOwner = false;
+  if (!u) return;
+  const { data } = await sb.rpc('is_admin'); S.isOwner = !!data;
+  if (!S.handleDraft) S.handleDraft = String(u.user_metadata?.full_name || u.user_metadata?.name || '').split(/\s+/)[0].slice(0, 20);
+}
+const signIn = () => sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + location.pathname } });
+const signOut = () => sb.auth.signOut();
+
+// ---------- writes ----------
+const writeMine = bets => api.updateMe({ bets });
+function failMsg(e) {
+  if (e && e.hint === 'game_started') return 'A game on that ticket has already started.';
+  if (e && e.hint === 'game_missing') return 'A game on that ticket is no longer on the board.';
+  if (e && (e.code === 'denied' || e.code === '42501')) return 'You don’t have permission to change that. Try signing in again.';
+  if (e && e.code === '23505') return 'That already exists. Reload the page.';
+  return 'That didn’t save. Check your connection and try again.';
+}
+// display names: 2–20 characters, not already used by another player (ignoring case)
+function nameProblem(handle) {
+  if (handle.length < 2) return 'Display names need at least 2 characters.';
+  const taken = Object.values(S.players).some(p => p.id !== S.me && String(p.handle).trim().toLowerCase() === handle.toLowerCase());
+  return taken ? `Someone already goes by ${handle}. Pick another name.` : '';
+}
+async function join(handle) {
+  handle = handle.trim().slice(0, 20);
+  const bad = nameProblem(handle); if (bad) { toast(bad); return; }
+  try {
+    await api.join({ handle, joinedAt: new Date().toISOString(), bets: [] });
+    S.handleDraft = ''; toast(`You're in with ${fmtU(START)} units.`);
+  } catch (e) { toast(failMsg(e)); render(); }
+}
+async function rename(handle) {
+  handle = handle.trim().slice(0, 20);
+  if (handle === myPlayer()?.handle) { toast('That’s already your name.'); return; }
+  const bad = nameProblem(handle); if (bad) { toast(bad); return; }
+  try { await api.updateMe({ handle }); S.renameDraft = null; document.activeElement?.blur(); render(); toast(`You’re now ${handle}.`); }
+  catch (e) { toast(failMsg(e)); }
+}
+async function place() {
+  const p = myPlayer(), c = slipCalc(); if (!c.n || !p || S.busy) return;
+  if (c.locked) { toast('A game on this ticket has started.'); render(); return; }
+  if (!c.ok) return;
+  const stake = Math.round(c.stake * 100) / 100, placedAt = new Date().toISOString();
+  const leg = l => ({ gameId: l.gameId, market: l.market, side: l.side, line: l.line, odds: l.odds });
+  const bets = c.parlay
+    ? [{ id: uid(), market: 'parlay', legs: c.legs.map(leg), odds: c.odds, stake, week: c.week, placedAt }]
+    : c.legs.map(l => ({ id: uid(), ...leg(l), stake, week: c.week, placedAt }));
+  S.busy = true; renderSlip();
+  try {
+    await writeMine([...(p.bets || []), ...bets]);
+    toast(c.parlay ? `Placed: ${c.n}-leg parlay at ${fmtOdds(c.odds)} for ${fmtU(stake)}.` : c.n > 1 ? `Placed ${c.n} picks at ${fmtU(stake)} each.` : `Placed: ${pickLabel(bets[0], c.legs[0].g, true)} for ${fmtU(stake)}.`);
+    S.slip = []; S.stake = ''; S.err = ''; S.sheetOpen = false;
+  } catch (e) { S.err = failMsg(e); }
+  S.busy = false; render();
+}
+async function cancelBet(id) {
+  const p = myPlayer(); if (!p) return;
+  const b = (p.bets || []).find(x => x.id === id);
+  if (!b || betLocked(b)) { toast('A game on that ticket has started, so it stands.'); return; }
+  try { await writeMine(p.bets.filter(x => x.id !== id)); toast('Pick cancelled. Stake returned.'); }
+  catch (e) { toast(failMsg(e)); }
+}
+async function saveGame(id) {
+  const d = draftFor(id);
+  const num = k => Number(d[k]);
+  const startsAt = new Date(d.startsAt);
+  if (!d.away.trim() || !d.home.trim() || isNaN(startsAt)) { toast('Fill in both teams and a kickoff time.'); return; }
+  const week = String(d.week).trim() === '' ? weekFromDate(startsAt.toISOString()) : +d.week;
+  if (!(Number.isInteger(week) && week >= 1)) { toast('Week has to be 1 or higher.'); return; }
+  for (const k of ['awayML', 'homeML', 'homeSpread', 'total']) if (d[k] === '' || isNaN(num(k))) { toast('Fill in both moneylines, the spread and the total.'); return; }
+  const opt = k => String(d[k] ?? '').trim() === '' ? null : num(k);
+  const optional = ['awaySpreadOdds', 'underOdds'];
+  for (const k of ['awayML', 'homeML', 'spreadOdds', 'totalOdds', ...optional]) if ((opt(k) !== null || !optional.includes(k)) && !(Math.abs(num(k)) >= 100)) { toast('American odds are +100 or higher, or −100 or lower.'); return; }
+  const body = { league: (d.league || 'NFL').trim(), week, away: d.away.trim(), home: d.home.trim(), startsAt: startsAt.toISOString(), awayML: num('awayML'), homeML: num('homeML'), homeSpread: num('homeSpread'), total: num('total'), spreadOdds: num('spreadOdds'), awaySpreadOdds: opt('awaySpreadOdds'), totalOdds: num('totalOdds'), underOdds: opt('underOdds') };
+  try {
+    if (id === 'new') { await api.addGame({ ...body, final: null, locked: false }); delete S.drafts.new; toast('Game posted.'); }
+    else { await api.updateGame(id, body); delete S.drafts[id]; toast('Lines saved. Existing picks keep the price they got.'); }
+  } catch (e) { toast(failMsg(e)); }
+  render();
+}
+async function settle(id) {
+  const sd = S.settle[id] || {}; const g = S.games[id];
+  const away = sd.away ?? g.final?.away, home = sd.home ?? g.final?.home;
+  if (away === '' || home === '' || away == null || home == null || isNaN(+away) || isNaN(+home)) { toast('Enter both final scores.'); return; }
+  try { await api.updateGame(id, { final: { away: +away, home: +home } }); delete S.settle[id]; toast(`Settled ${nick(g.away)} ${away}, ${nick(g.home)} ${home}.`); }
+  catch (e) { toast(failMsg(e)); }
+}
+
+// ---------- events ----------
+document.addEventListener('click', e => {
+  const t = e.target.closest('button, a'); if (!t) return;
+  const ds = t.dataset;
+  if (ds.pick) {
+    const [gameId, market, side] = ds.pick.split('|');
+    // one pick per market per game (same-game parlays are fine): tapping the same line removes it,
+    // the other side of that market (over → under, home → away) replaces it
+    const i = S.slip.findIndex(s => s.gameId === gameId && s.market === market), pick = { gameId, market, side };
+    const same = i >= 0 && S.slip[i].market === market && S.slip[i].side === side;
+    if (same) S.slip.splice(i, 1);
+    else if (i >= 0) S.slip[i] = pick;
+    else {
+      const first = S.slip.length && S.games[S.slip[0].gameId];
+      if (first && weekOf(first) !== weekOf(S.games[gameId])) { toast('Everything on one ticket has to be in the same week.'); return; }
+      if (S.slip.length >= MAX_LEGS) { toast(`Tickets max out at ${MAX_LEGS} picks.`); return; }
+      S.slip.push(pick);
+    }
+    S.err = ''; render();
+    if (!same && matchMedia('(min-width: 861px)').matches) { const el = $('stake-input'); if (el) el.focus(); }
+  }
+  else if ('clear' in ds) { S.slip = []; S.err = ''; S.sheetOpen = false; render(); }
+  else if ('sheet' in ds) { S.sheetOpen = !S.sheetOpen; render(); }
+  else if (ds.rmleg) { S.slip.splice(+ds.rmleg, 1); S.err = ''; render(); }
+  else if (ds.mode) { S.mode = ds.mode; render(); }
+  else if (ds.league) { S.league = ds.league; render(); }
+  else if (ds.quick) {
+    const c = slipCalc(); if (!c.s) return;
+    S.stake = ds.quick === 'max' ? String(Math.floor((c.perPick ? c.s.available / c.n : c.s.available) * 100) / 100) : ds.quick;
+    const i = $('stake-input'); if (i) i.value = S.stake; updateSlipNumbers();
+  }
+  else if (ds.cancel) cancelBet(ds.cancel);
+  else if ('editname' in ds) { setTimeout(() => { const i = $('rename-input'); if (i) { i.focus(); i.select(); } }, 80); }
+  else if ('signin' in ds) signIn();
+  else if ('signout' in ds) signOut();
+  else if (ds.edit) { draftFor(ds.edit)._open = true; render(); }
+  else if (ds.closeedit) { delete S.drafts[ds.closeedit]; render(); }
+  else if (ds.askdel) { S.confirmDel = ds.askdel; render(); }
+  else if ('nodel' in ds) { S.confirmDel = null; render(); }
+  else if (ds.del) {
+    const id = ds.del; S.confirmDel = null;
+    api.deleteGame(id).then(() => toast('Game deleted. Picks on it no longer count.'), err => toast(failMsg(err)));
+  }
+  else if (ds.unsettle) api.updateGame(ds.unsettle, { final: null }).then(() => toast('Game reopened. Picks are pending again.'), err => toast(failMsg(err)));
+  else if (ds.lock) { const g = S.games[ds.lock]; api.updateGame(ds.lock, { locked: !g.locked }).then(() => toast(g.locked ? 'Unlocked.' : 'Locked. No new picks on this game.'), err => toast(failMsg(err))); }
+});
+document.addEventListener('input', e => {
+  const t = e.target;
+  if (t.id === 'stake-input') { S.stake = t.value; S.err = ''; updateSlipNumbers(); }
+  else if (t.id === 'handle-input') S.handleDraft = t.value;
+  else if (t.id === 'rename-input') S.renameDraft = t.value;
+  else if (t.dataset.draft) draftFor(t.dataset.draft)[t.dataset.key] = t.value;
+  else if (t.dataset.settle) { (S.settle[t.dataset.settle] ||= {})[t.dataset.key] = t.value; }
+});
+document.addEventListener('submit', e => {
+  const f = e.target; e.preventDefault();
+  const act = f.dataset.act;
+  if (act === 'join') join(S.handleDraft || $('handle-input').value);
+  else if (act === 'rename') rename($('rename-input').value);
+  else if (act === 'place') place();
+  else if (act === 'savegame') saveGame(f.dataset.id);
+  else if (act === 'settle') settle(f.dataset.id);
+});
+function route() {
+  const h = location.hash.replace('#', '');
+  S.tab = TABS.some(([k]) => k === h) ? h : 'board';
+  if (S.tab === 'book' && S.ready && !S.isOwner) S.tab = 'board';
+  render();
+}
+window.addEventListener('hashchange', route);
+setInterval(() => { if (!isTyping()) render(); }, 30000);
+
+// ---------- boot ----------
+async function boot() {
+  route();
+  if (!sb) { S.ready = true; S.offline = true; render(); return; }
+  const { data: { session } } = await sb.auth.getSession();
+  await applySession(session);
+  // don't call Supabase inside the auth callback itself (it can deadlock); hop out of it first
+  sb.auth.onAuthStateChange((ev, session) => {
+    if (ev === 'SIGNED_IN' || ev === 'SIGNED_OUT') setTimeout(() => applySession(session).then(() => { S.slip = []; route(); }), 0);
+  });
+  try { await loadAll(); } catch (e) { toast('Couldn’t load the book. Reload to try again.'); }
+  S.ready = true; route();
+  subscribe();
+  // realtime can drop while a phone sleeps; catch up whenever the tab comes back
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) loadAll().then(render, () => {}); });
+}
+boot();
+})();
+</script>
+</body>
+</html>

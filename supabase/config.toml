@@ -1,0 +1,4 @@
+# Only used if you deploy with the Supabase CLI (`supabase functions deploy odds-pull`).
+# The function checks its own x-cron-secret header, so Supabase's JWT check must be off.
+[functions.odds-pull]
+verify_jwt = false
