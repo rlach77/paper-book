@@ -774,8 +774,11 @@ const CFG = window.PAPERBOOK || {};
 // supabase-js 2.45 guards the saved session with a browser-wide lock (navigator.locks). One stuck tab of the site then
 // freezes every other tab on "Loading…", so lock within this tab only (calls still run one at a time here).
 const tabLocks = {};
+// sign-in debugging: keep the auth library's own log (strings only; objects reduced to their key names, so no tokens)
+const authLog = [];
+const authDebug = (_prefix, ...a) => { authLog.push(a.map(x => typeof x === 'string' ? x : x && typeof x === 'object' ? (x.message || '{' + Object.keys(x).join(',') + '}') : String(x)).join(' ').slice(0, 120)); if (authLog.length > 60) authLog.shift(); };
 const tabLock = (name, _timeout, fn) => { const run = (tabLocks[name] || Promise.resolve()).then(fn, fn); tabLocks[name] = run.catch(() => {}); return run; };
-const sb = window.supabase && CFG.supabaseUrl && !/YOUR-/.test(CFG.supabaseUrl + CFG.supabaseKey) ? window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseKey, { auth: { flowType: 'pkce', lock: tabLock } }) : null;
+const sb = window.supabase && CFG.supabaseUrl && !/YOUR-/.test(CFG.supabaseUrl + CFG.supabaseKey) ? window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseKey, { auth: { flowType: 'pkce', lock: tabLock, debug: authDebug } }) : null;
 const GAME_COLS = { startsAt: 'starts_at', awayML: 'away_ml', homeML: 'home_ml', homeSpread: 'home_spread', spreadOdds: 'spread_odds', awaySpreadOdds: 'away_spread_odds', totalOdds: 'total_odds', underOdds: 'under_odds', updatedAt: 'updated_at' };
 const PLAYER_COLS = { joinedAt: 'joined_at' };
 const toRow = (o, cols) => Object.fromEntries(Object.entries(o).map(([k, v]) => [cols[k] || k, v]));
@@ -1003,7 +1006,7 @@ async function boot() {
   // a failed Google sign-in comes back with ?error_description=… or #error_description=…, or fails while the code is
   // exchanged (initialize() reports that; getSession() doesn't); say why instead of bouncing back silently
   const q = new URLSearchParams(location.search), authErr = q.get('error_description') || new URLSearchParams(location.hash.slice(1)).get('error_description');
-  const verifier = Object.keys(localStorage).some(k => k.endsWith('-code-verifier')), tried = sessionStorage.getItem('pb-signing-in');
+  const verifierKeys = Object.keys(localStorage).filter(k => k.endsWith('-code-verifier')), verifier = verifierKeys.length > 0, tried = sessionStorage.getItem('pb-signing-in');
   sessionStorage.removeItem('pb-signing-in');
   const events = [];
   let step = 'initialize';
@@ -1029,7 +1032,7 @@ async function boot() {
   if (!session && (tried || authErr || q.has('code'))) {
     const why = authErr || initErr?.message || (!q.has('code') ? `Google sent you back to ${location.origin + location.pathname} without a sign-in code` : !verifier ? 'this browser lost the sign-in check from before Google (private window, or started in another browser?)'
       : sessErr ? sessErr.message
-      : `unknown [events ${events.join(',') || 'none'}; ${stored}]`);
+      : `unknown [events ${events.join(',') || 'none'}; ${stored}; page ${location.host + location.pathname}; verifier keys ${verifierKeys.join(',')}; ${authLog.filter(l => /PKCE|URL|error|exchange/i.test(l)).slice(0, 4).join(' | ') || 'auth log: ' + authLog.slice(0, 3).join(' | ')}]`);
     console.warn('[sign-in]', { why, url: location.origin + location.pathname, code: q.has('code'), verifier, initErr });
     setTimeout(() => toast('Google sign-in failed: ' + why, 15000), 0);
   }
